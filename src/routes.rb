@@ -1,0 +1,505 @@
+require"roda"
+class App::Routes < Roda
+  include App::Router::AllPlugins
+  plugin :not_found do
+    { status: 'error', data: 'Not Found' }
+  end
+
+  def do_crud(klass, r, only='CRUDL', opts = {})
+    r.post { klass[r, opts].create } if only.include?('C')
+    r.get(Integer) {|id| klass[r, opts.merge(id: id)].get} if only.include?('R')
+    r.get { klass[r, opts].list } if only.include?('L')
+    r.put(Integer) {|id| klass[r, opts.merge(id: id)].update } if only.include?('U')
+    r.delete(Integer) {|id| klass[r, opts.merge(id: id)].delete } if only.include?('D')
+  end
+
+  route do |r|
+    r.public
+
+    r.root do
+      File.read(File.join(App.root, 'public', 'index.html'))
+    end
+
+    r.on 'admin' do
+      r.get do
+        File.read(File.join(App.root, 'public', 'index.html'))
+      end
+    end
+
+    r.on 'api' do
+      r.response['Content-Type'] = 'application/json'
+      
+      # Public endpoints (no auth required)
+      r.post('login') { Session[r].login }
+      r.post('forgot-password') { Users[r].forgot_password }
+      r.post('validate-password-token') { Users[r].validate_password_token }
+      r.post('reset-password') { Users[r].reset_password }
+
+      r.get 'version' do
+        { status: 'success', version: 1 }
+      end
+
+      # RAM Portal — the self-service member portal's own auth (register/
+      # login/forgot-password/reset-password), wholly separate from the
+      # Admin Portal's `users`-based login above. RAM members aren't `users`
+      # rows (no role_id/is_super_admin/staff?), so this can't ride
+      # Session/Users/auth_required! — it has its own JWT (CurrentRam,
+      # helpers/current_ram.rb) and its own guard (ram_auth_required!,
+      # below). `/api/ram` (admin-only RamMembers CRUD, further down) is
+      # untouched by any of this.
+      r.on 'ram-portal' do
+        r.post('register') { RamAuth[r].register }
+        r.post('login') { RamAuth[r].login }
+        r.post('forgot-password') { RamAuth[r].forgot_password }
+        r.post('validate-password-token') { RamAuth[r].validate_password_token }
+        r.post('reset-password') { RamAuth[r].reset_password }
+
+        ram_auth_required!
+
+        r.on 'me' do
+          r.get('info') { RamAuth[r].info }
+          r.put('update') { RamAuth[r].update_profile }
+          r.put('update-password') { RamAuth[r].update_password }
+        end
+      end
+
+      # Client Portal — the self-service retail-investor portal's own auth
+      # (register/verify-otp/resend-otp/login/forgot-password/reset-password),
+      # wholly separate from both the Admin Portal's `users`-based login and
+      # the RAM Portal's `ram-portal` block above. Clients aren't `users` or
+      # `ram_members` rows, so this has its own JWT (CurrentClient,
+      # helpers/current_client.rb) and its own guard (client_auth_required!,
+      # below). `/api/clients` (admin-only Clients CRM CRUD, further down) is
+      # untouched by any of this.
+      r.on 'client-portal' do
+        r.post('register') { ClientAuth[r].register }
+        r.post('verify-otp') { ClientAuth[r].verify_otp }
+        r.post('resend-otp') { ClientAuth[r].resend_otp }
+        r.post('login') { ClientAuth[r].login }
+        r.post('forgot-password') { ClientAuth[r].forgot_password }
+        r.post('validate-password-token') { ClientAuth[r].validate_password_token }
+        r.post('reset-password') { ClientAuth[r].reset_password }
+
+        client_auth_required!
+
+        r.on 'me' do
+          r.get('info') { ClientAuth[r].info }
+          r.put('update') { ClientAuth[r].update_profile }
+          r.put('update-password') { ClientAuth[r].update_password }
+        end
+      end
+
+      # Agent Portal — the sales-agent self-service portal's own auth
+      # (login/verify-otp/resend-otp/forgot-password/reset-password),
+      # wholly separate from the Admin/RAM/Client Portal auth blocks above.
+      # No 'register' route — see services/agent_auth.rb's header comment.
+      # Its own JWT (CurrentAgent, helpers/current_agent.rb) and its own
+      # guard (agent_auth_required!, below). `/api/agents` (admin-only
+      # Agents CRUD, further down) is untouched by any of this.
+      r.on 'agent-portal' do
+        r.post('login') { AgentAuth[r].login }
+        r.post('verify-otp') { AgentAuth[r].verify_otp }
+        r.post('resend-otp') { AgentAuth[r].resend_otp }
+        r.post('forgot-password') { AgentAuth[r].forgot_password }
+        r.post('validate-password-token') { AgentAuth[r].validate_password_token }
+        r.post('reset-password') { AgentAuth[r].reset_password }
+
+        agent_auth_required!
+
+        r.on 'me' do
+          r.get('info') { AgentAuth[r].info }
+          r.put('update') { AgentAuth[r].update_profile }
+          r.put('update-password') { AgentAuth[r].update_password }
+
+          # Scoped CRM data — an agent's own book of business, filtered
+          # server-side to their own agent_slug/assigned_agent_slug on every
+          # read, with an ownership check on every write (see
+          # services/agent_portal.rb). Deals/Leads/SiteVisits/Clients are
+          # all real, already-built Admin Portal resources
+          # (services/deals.rb, leads.rb, site_visits.rb, clients.rb) — this
+          # doesn't duplicate their logic, just re-exposes a scoped slice of
+          # the same tables to a non-admin (agent) token.
+          r.on 'deals' do
+            r.get { AgentPortal[r].my_deals }
+            r.put(Integer) { |id| AgentPortal[r, id: id].update_my_deal }
+          end
+
+          r.on 'leads' do
+            r.get { AgentPortal[r].my_leads }
+            r.put(Integer) { |id| AgentPortal[r, id: id].update_my_lead }
+          end
+
+          r.on 'site-visits' do
+            r.get { AgentPortal[r].my_site_visits }
+            r.put(Integer) { |id| AgentPortal[r, id: id].update_my_site_visit }
+          end
+
+          r.on 'clients' do
+            r.get { AgentPortal[r].my_clients }
+          end
+        end
+      end
+
+      # Public, read-only catalog browsing — no auth at all. Used by the RAM
+      # Portal's Properties browse + "Recommend Property" flow (which has no
+      # admin session to spend) and, eventually, the public (site) app.
+      # Reuses the exact same Properties/Builders services/models as the
+      # Admin Portal's own CRUD below — Read + List only ('RL'), no
+      # create/update/delete route is ever registered here.
+      r.on 'public' do
+        r.on 'properties' do
+          do_crud(Properties, r, 'RL')
+        end
+
+        r.on 'builders' do
+          do_crud(Builders, r, 'RL')
+        end
+
+        # Lookup tables needed to render/filter the properties list above
+        # (community/area/location/type names) without an admin session —
+        # same reuse-the-existing-service, Read+List-only pattern.
+        r.on 'communities' do
+          do_crud(Communities, r, 'RL')
+        end
+
+        r.on 'areas' do
+          do_crud(Areas, r, 'RL')
+        end
+
+        r.on 'locations' do
+          do_crud(Locations, r, 'RL')
+        end
+
+        r.on 'property-types' do
+          do_crud(PropertyTypes, r, 'RL')
+        end
+
+        r.on 'amenities' do
+          do_crud(Amenities, r, 'RL')
+        end
+      end
+
+      # Authentication required for all routes below
+      auth_required!
+
+      # User profile routes
+      r.on 'me' do
+        r.get('info') { Users[r].info }
+        r.put('update-password') { Users[r].update_password }
+      end
+
+      # Admin-only routes
+      admin_required!
+      
+      # Wrap all admin routes in error handling
+      begin
+        r.on 'users' do
+          do_crud(Users, r, 'CRUDL')
+        end
+
+        r.on 'builders' do
+          do_crud(Builders, r, 'CRUDL')
+        end
+
+        r.on 'property-types' do
+          do_crud(PropertyTypes, r, 'CRUDL')
+        end
+
+        r.on 'areas' do
+          do_crud(Areas, r, 'CRUDL')
+        end
+
+        r.on 'locations' do
+          do_crud(Locations, r, 'CRUDL')
+        end
+
+        r.on 'amenities' do
+          do_crud(Amenities, r, 'CRUDL')
+        end
+
+        r.on 'property-tags' do
+          do_crud(PropertyTags, r, 'CRUDL')
+        end
+
+        r.on 'communities' do
+          do_crud(Communities, r, 'CRUDL')
+        end
+
+        r.on 'properties' do
+          do_crud(Properties, r, 'CRUDL')
+        end
+
+        r.on 'collections' do
+          do_crud(Collections, r, 'CRUDL')
+        end
+
+        r.on 'leads' do
+          do_crud(Leads, r, 'CRUDL')
+        end
+
+        r.on 'site-visits' do
+          do_crud(SiteVisits, r, 'CRUDL')
+        end
+
+        r.on 'referrals' do
+          do_crud(Referrals, r, 'CRUDL')
+        end
+
+        r.on 'clients' do
+          do_crud(Clients, r, 'CRUDL')
+        end
+
+        r.on 'deals' do
+          do_crud(Deals, r, 'CRUDL')
+        end
+
+        r.on 'agents' do
+          do_crud(Agents, r, 'CRUDL')
+        end
+
+        # RAM (Relationship Advisory Members) — table/class are RamMembers/
+        # ram_members (avoiding an awkward bare `ram` SQL identifier), but the
+        # URL path stays 'ram' to match the frontend's existing /admin/ram route.
+        r.on 'ram' do
+          do_crud(RamMembers, r, 'CRUDL')
+        end
+
+        r.on 'portfolio-members' do
+          do_crud(PortfolioMembers, r, 'CRUDL')
+        end
+
+        r.on 'expenses' do
+          do_crud(Expenses, r, 'CRUDL')
+        end
+
+        r.on 'invoices' do
+          do_crud(Invoices, r, 'CRUDL')
+        end
+
+        r.on 'payments' do
+          do_crud(Payments, r, 'CRUDL')
+        end
+
+        r.on 'refunds' do
+          do_crud(Refunds, r, 'CRUDL')
+        end
+
+        r.on 'taxes' do
+          do_crud(Taxes, r, 'CRUDL')
+        end
+
+        # Commission and Revenue are NOT tables — computed-report endpoints
+        # over the real Agents table (see services/reports.rb), mirroring
+        # lib/data/finance.js's getCommissionRows()/getRevenueByAgent() etc.
+        # but reading real agents.commission_earned/revenue/commission_monthly
+        # instead of the mock array.
+        r.get 'reports/commission' do
+          Reports[r].commission
+        end
+
+        r.get 'reports/revenue' do
+          Reports[r].revenue
+        end
+
+        r.on 'blogs' do
+          do_crud(Blogs, r, 'CRUDL')
+        end
+
+        r.on 'testimonials' do
+          do_crud(Testimonials, r, 'CRUDL')
+        end
+
+        r.on 'faqs' do
+          do_crud(Faqs, r, 'CRUDL')
+        end
+
+        # Careers is two small resources per lib/data/careers.js
+        # (openRoles[] + benefits[]), both surfaced on one combined admin
+        # page — no single "Careers" table/model/service.
+        r.on 'job-openings' do
+          do_crud(JobOpenings, r, 'CRUDL')
+        end
+
+        r.on 'career-benefits' do
+          do_crud(CareerBenefits, r, 'CRUDL')
+        end
+
+        r.on 'seo-pages' do
+          do_crud(SeoPages, r, 'CRUDL')
+        end
+
+        r.on 'hero-stats' do
+          do_crud(HeroStats, r, 'CRUDL')
+        end
+
+        # Homepage Content's other piece — heroSocialProof — is a singleton
+        # config object (no natural "many rows" shape), not a CRUD list, so
+        # it's a plain GET/PUT pair rather than do_crud: no id segment at
+        # all, since HomepageSettings#item always resolves to the one
+        # existing row (creating it on first access). See
+        # services/homepage_settings.rb for the full reasoning.
+        r.on 'homepage-settings' do
+          r.get { HomepageSettings[r].get }
+          r.put { HomepageSettings[r].update }
+        end
+
+        # Activity Logs — read-only: logs are system-generated, so only
+        # Read + List are wired (no r.post/r.put/r.delete block is ever
+        # registered for this resource, per do_crud's 'RL' arg above).
+        r.on 'activity-logs' do
+          do_crud(ActivityLogs, r, 'RL')
+        end
+
+        # Audit Logs — read-only, same reasoning as Activity Logs: this is a
+        # polymorphic database change log (old value -> new value per
+        # entity), system-generated, so only Read + List are wired (no
+        # r.post/r.put/r.delete block is ever registered for this resource,
+        # per do_crud's 'RL' arg above).
+        r.on 'audit-logs' do
+          do_crud(AuditLogs, r, 'RL')
+        end
+
+        # Notifications — the admin's own notification feed. Full CRUD
+        # (unlike Activity/Audit Logs' read-only 'RL'): an admin can manually
+        # create/broadcast, edit, and delete notifications from this page,
+        # not just read system-generated ones. `mark-all-read` is a small
+        # custom action outside do_crud's CRUDL set (backs the page's "Mark
+        # all as read" button with one real UPDATE instead of the frontend
+        # firing one PUT per unread row) — registered before do_crud so the
+        # literal 'mark-all-read' path segment is matched first; do_crud's
+        # r.put(Integer)/r.delete(Integer) only match numeric id segments, so
+        # there's no conflict either way.
+        r.on 'notifications' do
+          r.post 'mark-all-read' do
+            Notifications[r].mark_all_read
+          end
+          do_crud(Notifications, r, 'CRUDL')
+        end
+
+        # Media Library — metadata rows only (name/tags/uploaded_by/src as a
+        # URL string), not real file upload (no S3 wiring exists anywhere in
+        # this codebase yet, see ARCHITECTURE.md's Known gaps). Full CRUD,
+        # same as Notifications: an admin can register/edit/delete media
+        # metadata directly, not just read system-generated rows.
+        r.on 'media-items' do
+          do_crud(MediaItems, r, 'CRUDL')
+        end
+
+        # RBAC admin pages — Roles. `users` (above) already existed pre-Foundation;
+        # this is the last resource of the last roadmap phase. Permissions has
+        # no route/table of its own — the fixed module x action taxonomy
+        # (lib/data/staff.js's permissionModules/ALL_FLAGS) stays a frontend
+        # constant, and the actual granted flags per role live on this
+        # resource's own `permissions` column (see services/roles.rb).
+        r.on 'roles' do
+          do_crud(Roles, r, 'CRUDL')
+        end
+
+        # Follow Ups — real backing table (migrations/0040) for what was
+        # previously lib/data/admin.js's local-only mock, used by both the
+        # standalone /admin/follow-ups page and the Dashboard's Follow Ups
+        # widget/Calendar entries. Full CRUD: an admin logs, edits
+        # (reschedule/reprioritize), completes, and deletes their own
+        # follow-up tasks.
+        r.on 'follow-ups' do
+          do_crud(FollowUps, r, 'CRUDL')
+        end
+
+        # Approvals — real backing table (migrations/0041) for the
+        # Dashboard's Pending Approvals widget, previously a local-only mock
+        # with no persistence (approve/reject just spliced the item out of
+        # React state). Full CRUD: approve/reject ride the standard PUT as a
+        # `status` transition, same convention as Testimonials.
+        r.on 'approvals' do
+          do_crud(Approvals, r, 'CRUDL')
+        end
+
+        # Full roadmap complete — every module above is real, migrated
+        # (pending the user's own db:migrate/db:seed run), and wired to live
+        # CRUD. No further placeholder comment: there is no next module.
+      rescue => e
+        App.logger.error("API Error: #{e.message}")
+        App.logger.error(e.backtrace)
+        { status: 'error', message: "An error occurred: #{e.message}" }
+      end
+    end
+
+    # Fallback route
+    r.get do
+      File.read(File.join(App.root, 'public', 'index.html'))
+    end
+  end
+
+  before do
+    @time = Time.now
+    App::Helpers::Before.run!(request)
+  end
+
+  after do |res|
+    rtype = request.request_method
+    App.logger.info("→ [#{Time.now - @time} seconds] - [#{rtype}]#{request.path}")
+  end
+
+  def auth_required!
+    unless App.cu.valid?
+      request.halt(401, {'Content-Type' => 'application/json'},{ status: 'Unauthorized!' }.to_json)
+    end
+  rescue Sequel::PoolTimeoutError, Sequel::DatabaseConnectionError => e
+    # CurrentUser#user_obj re-raises these rather than swallowing them into a
+    # false "invalid session" — surface as a real 503, not a 401, so the
+    # frontend doesn't treat a momentary DB hiccup as a real logout.
+    App.logger.error("Auth check failed, DB unavailable: #{e.message}")
+    request.halt(503, {'Content-Type' => 'application/json'}, { status: 'error', data: 'Service temporarily unavailable' }.to_json)
+  end
+
+  def admin_required!
+    unless App.cu.staff?
+      request.halt(403, {'Content-Type' => 'application/json'},{ status: 'Forbidden!' }.to_json)
+    end
+  end
+
+  # RAM Portal's own auth gate — parallel to auth_required! above, but
+  # against App::Helpers::CurrentRam (a RAM member's own JWT) instead of
+  # App.cu/App::Helpers::CurrentUser (an admin/staff `users` session). A
+  # valid admin token does NOT satisfy this, and a valid RAM token does not
+  # satisfy auth_required!/admin_required! — the two identities are fully
+  # independent, by design (see current_ram.rb's SECRET comment).
+  def ram_auth_required!
+    unless App::Helpers::CurrentRam.valid?
+      request.halt(401, {'Content-Type' => 'application/json'},{ status: 'Unauthorized!' }.to_json)
+    end
+  rescue Sequel::PoolTimeoutError, Sequel::DatabaseConnectionError => e
+    App.logger.error("RAM auth check failed, DB unavailable: #{e.message}")
+    request.halt(503, {'Content-Type' => 'application/json'}, { status: 'error', data: 'Service temporarily unavailable' }.to_json)
+  end
+
+  # Client Portal's own auth gate — parallel to ram_auth_required! above, but
+  # against App::Helpers::CurrentClient (a client's own JWT). Independent of
+  # auth_required!/admin_required!/ram_auth_required! — none of the four
+  # tokens satisfy any of the others' checks.
+  def client_auth_required!
+    unless App::Helpers::CurrentClient.valid?
+      request.halt(401, {'Content-Type' => 'application/json'},{ status: 'Unauthorized!' }.to_json)
+    end
+  rescue Sequel::PoolTimeoutError, Sequel::DatabaseConnectionError => e
+    App.logger.error("Client auth check failed, DB unavailable: #{e.message}")
+    request.halt(503, {'Content-Type' => 'application/json'}, { status: 'error', data: 'Service temporarily unavailable' }.to_json)
+  end
+
+  # Agent Portal's own auth gate — parallel to ram_auth_required!/
+  # client_auth_required! above, against App::Helpers::CurrentAgent (an
+  # agent's own JWT). Fully independent of the other three guards.
+  def agent_auth_required!
+    unless App::Helpers::CurrentAgent.valid?
+      request.halt(401, {'Content-Type' => 'application/json'},{ status: 'Unauthorized!' }.to_json)
+    end
+  rescue Sequel::PoolTimeoutError, Sequel::DatabaseConnectionError => e
+    App.logger.error("Agent auth check failed, DB unavailable: #{e.message}")
+    request.halt(503, {'Content-Type' => 'application/json'}, { status: 'error', data: 'Service temporarily unavailable' }.to_json)
+  end
+end
+
+App.require_blob('services/base.rb')
+App.require_blob('services/*.rb')
+
+App::Routes.send(:include, App::Services)

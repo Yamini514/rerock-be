@@ -1,0 +1,30 @@
+# OS files
+.DS_Store
+Thumbs.db
+
+# ruby / bundler
+.byebug_history
+*.gem
+/.bundle/
+/vendor/bundle/
+
+# env files
+.env
+.env.*
+!.env.example
+
+# logs
+newrelic_agent.log
+/log/*.log
+*.log
+
+# db
+*.db
+*.sqlite3
+
+# misc
+./older
+tmp/
+.idea/
+.vscode/
+*.swp

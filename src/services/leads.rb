@@ -1,0 +1,50 @@
+class App::Services::Leads < App::Services::Base
+  def model; Lead; end
+
+  # Mirrors lib/data/leads.js: search by client name/phone, plus exact filters
+  # for status/source/priority and the FKs, ordered newest-first (there's no
+  # curated display_order for leads — recency is what matters here).
+  def list
+    ds = model.order(Sequel.desc(:created_at))
+    ds = ds.where(status: qs[:status]) if qs[:status].present?
+    ds = ds.where(source: qs[:source]) if qs[:source].present?
+    ds = ds.where(priority: qs[:priority]) if qs[:priority].present?
+    ds = ds.where(property_id: qs[:property_id]) if qs[:property_id].present?
+    ds = ds.where(community_id: qs[:community_id]) if qs[:community_id].present?
+    ds = ds.where(area_id: qs[:area_id]) if qs[:area_id].present?
+    if qs[:search].present?
+      term = "%#{qs[:search]}%"
+      # NOTE: deliberately NOT services/users.rb's `.where(a).or(b)` idiom —
+      # `Dataset#or` ORs the new condition against the dataset's *entire*
+      # existing WHERE clause, which would swallow the status/source/
+      # priority/property/community/area filters above whenever a search term
+      # is also present (users.rb's list has no other filters, so it never
+      # hit this). Combining the two LIKEs with `|` first, then ANDing the
+      # combined expression in with `where`, keeps the other filters intact.
+      ds = ds.where(
+        Sequel.like(:client_name, term, case_insensitive: true) | Sequel.like(:client_phone, term, case_insensitive: true)
+      )
+    end
+    return_success(ds.all.map(&:to_pos))
+  end
+
+  # Status transitions (what the old admin.js mock's "Convert to Lead" action
+  # becomes — see app/admin/(portal)/enquiries/page.js) and follow-up date
+  # updates all ride the standard PUT/update below. `timeline` is just
+  # whitelisted like any other saveable field — the frontend sends the full,
+  # already-appended array on every change (same "send the whole array back"
+  # convention already used for Community#amenity_ids / Property#tag_ids,
+  # just for a jsonb array of objects instead of an integer[] of ids — there's
+  # no per-entry field whitelisting here, same as Property#floor_plans/
+  # #pricing_trend).
+  def self.fields
+    {
+      save: [
+        :client_name, :client_phone, :client_email, :avatar,
+        :property_id, :community_id, :area_id, :budget,
+        :source, :priority, :status, :last_follow_up, :next_follow_up,
+        :agent_slug, :ram_id, :timeline
+      ]
+    }
+  end
+end
