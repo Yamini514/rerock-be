@@ -52,7 +52,7 @@ class App::Models::User < Sequel::Model
     reset_url = "#{base_url}/reset-password?token=#{CGI.escape(reset_token)}"
 
     mail = Mail.new do
-      from    'noreply@rerockrealty.com'
+      from    'apps@srinishtha.com'
       to      user_email
       subject 'Reset your password'
       html_part do

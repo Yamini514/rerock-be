@@ -37,7 +37,7 @@ class App::Models::Agent < Sequel::Model
     reset_url = "#{base_url}/reset-password?token=#{CGI.escape(reset_token)}"
 
     mail = Mail.new do
-      from    'noreply@rerockrealty.com'
+      from    'apps@srinishtha.com'
       to      agent_email
       subject 'Set/reset your REROCK Realty agent password'
       html_part do
@@ -73,7 +73,7 @@ class App::Models::Agent < Sequel::Model
     code = self.otp_code
 
     mail = Mail.new do
-      from    'noreply@rerockrealty.com'
+      from    'apps@srinishtha.com'
       to      agent_email
       subject 'Your REROCK Realty sign-in code'
       html_part do
