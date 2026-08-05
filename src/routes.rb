@@ -185,6 +185,7 @@ class App::Routes < Roda
       # User profile routes
       r.on 'me' do
         r.get('info') { Users[r].info }
+        r.put('update') { Users[r].update_profile }
         r.put('update-password') { Users[r].update_password }
       end
 

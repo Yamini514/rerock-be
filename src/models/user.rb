@@ -86,7 +86,7 @@ class App::Models::User < Sequel::Model
     as_json(only: [
       :id, :full_name, :email, :active, :created_at, :updated_at,
       :phone_number, :designation, :department, :reporting_to_id,
-      :last_logged_in_at, :role_id, :permission_overrides
+      :last_logged_in_at, :role_id, :permission_overrides, :avatar_url
     ]).merge!(
       'role' => role&.name,
       'role_slug' => role&.slug,

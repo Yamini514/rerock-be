@@ -1,13 +1,11 @@
 require "mail"
 options = {
-  address: ENV['EMAIL_SMTP_SERVER'],
-  port: 465,
-  domain: ENV['EMAIL_DOMAN'],  # Replace with your domain
-  user_name: ENV['EMAIL_USER'],  # Replace with your email username
-  password: ENV['PASSWORD'],  # Replace with your email password
+  address: ENV['SMTP_HOST'],
+  port: (ENV['SMTP_PORT'] || 587).to_i,
+  user_name: ENV['SMTP_USERNAME'],
+  password: ENV['SMTP_PASSWORD'],
   authentication: 'plain',
-  enable_starttls_auto: true,  # If TLS is needed, but for port 465 SSL is directly used
-  ssl: true  # SSL is required on port 465
+  enable_starttls_auto: true  # port 587 uses STARTTLS, not implicit SSL
 }
 
 Mail.defaults do

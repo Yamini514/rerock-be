@@ -47,6 +47,13 @@ class App::Services::Users < App::Services::Base
     return_success(App.cu.user_obj.as_pos)
   end
 
+  def update_profile
+    user = App.cu.user_obj
+    allowed = params.slice(:full_name, :phone_number, :designation, :department, :avatar_url)
+    user.set_fields(allowed, allowed.keys)
+    save(user) { |o| return_success(o.as_pos) }
+  end
+
   def update_password
     
     if App.cu.user_obj.password == params[:current_password]
