@@ -1,19 +1,12 @@
 require 'uri'
 
-# The Agent Portal's own self-service auth (login/verify-otp/resend-otp/
-# forgot-password/reset-password/profile) — deliberately a separate service
-# from App::Services::Agents (services/agents.rb), which is the Admin
-# Portal's staff-only CRUD over the same `agents` table. That one stays
+# The Agent Portal's own self-service auth (register/login/forgot-password/
+# reset-password/profile) — deliberately a separate service from
+# App::Services::Agents (services/agents.rb), which is the Admin Portal's
+# staff-only CRUD over the same `agents` table. That one stays
 # admin_required!-gated and untouched; this one is reachable by an agent's
-# own CurrentAgent-issued token (or, for login/verify-otp/resend-otp/forgot/
-# reset, no token at all — see routes.rb's public 'agent-portal' block).
-#
-# No #register: agents are provisioned by an admin via /admin/agents, never
-# self-register (matches the frontend — there's no Agent Portal register
-# page, unlike the Client Portal's). An agent's first-ever password is set
-# through the exact same forgot-password link as a reset — see #login's
-# comment for why that's a deliberate, sufficient substitute for a real
-# "invite" flow.
+# own CurrentAgent-issued token (or, for register/login/forgot/reset, no
+# token at all — see routes.rb's public 'agent-portal' block).
 #
 # `model` is Agent (same table as Agents) purely so Base#save's audit-log
 # hook and data_for(:save) whitelisting both work unchanged.
@@ -21,15 +14,41 @@ class App::Services::AgentAuth < App::Services::Base
   def model; Agent; end
 
   RESET_TOKEN_EXPIRATION_TIME = 2 * 60 * 60
-  OTP_EXPIRATION_TIME = 10 * 60
 
-  # Two-factor: this only checks the password and, if correct, emails a
-  # fresh OTP — it does NOT issue a session token (matching the existing
-  # frontend flow, where AgentLoginPage always redirects to verify-otp
-  # rather than logging in directly). #verify_otp below is what actually
-  # issues the token. Since #resend_otp re-checks the password too (not just
-  # the email), an OTP can never be (re)sent to someone who doesn't already
-  # know the password — the two factors stay genuinely independent.
+  # Self-registration lands as `status: "Pending"` — same admin-must-approve
+  # gate as RAM Portal's own self-registration (services/ram_auth.rb#register).
+  # A fresh registration is deliberately NOT auto-logged-in. An admin can
+  # still create an agent directly via /admin/agents (services/agents.rb),
+  # in which case they start with no password at all and use the same
+  # forgot-password link as a reset to set one — see #login's comment.
+  def register
+    name = params[:name]&.strip
+    email = params[:email]&.strip&.downcase
+    phone = params[:phone]&.strip
+    password = params[:password]
+
+    return_errors!("Name, email and password are required.", 400) if name.blank? || email.blank? || password.blank?
+    return_errors!("Enter a valid email address.", 400) unless email.match?(URI::MailTo::EMAIL_REGEXP)
+    return_errors!("Password must be at least 8 characters.", 400) if password.length < 8
+    return_errors!("An account with this email already exists.", 400) if Agent.where(email: email).first
+
+    agent = Agent.new(
+      slug: unique_slug(name),
+      name: name,
+      email: email,
+      phone: phone,
+      role: "Investment Advisor",
+      specialization: params[:specialization].presence,
+      status: "Pending"
+    )
+    agent.password = password
+    save(agent) { |o| return_success(o.as_pos) }
+  end
+
+  # No OTP/2FA step: a correct password logs an agent straight in, same as
+  # every other portal's login. Gated on `status` exactly like RAM Portal's
+  # login (services/ram_auth.rb#login) — "Pending" (fresh self-registration,
+  # not yet admin-approved) and "Inactive" (deactivated) both block sign-in.
   def login
     email = params[:email]&.strip&.downcase
     agent = email.present? ? Agent.find(email: email) : nil
@@ -37,46 +56,23 @@ class App::Services::AgentAuth < App::Services::Base
     return_errors!("Invalid Email / Password") if agent.nil?
     return_errors!("Your account doesn't have a password set yet. Use \"Forgot password\" to set one.") if agent.encoded_password.nil?
     return_errors!("Invalid Email / Password") unless agent.password == params[:password]
-    return_errors!("This account has been deactivated. Contact an admin for access.") if agent.status == "Inactive"
 
-    agent.generate_and_send_otp!
-    return_success(email: agent.email)
-  rescue => e
-    App.logger.error(e.message)
-    App.logger.error(e.backtrace)
-    return_errors!("Some error occurred while signing in.")
-  end
-
-  def resend_otp
-    email = params[:email]&.strip&.downcase
-    agent = email.present? ? Agent.find(email: email) : nil
-
-    return_errors!("Invalid Email / Password") unless agent && agent.encoded_password && agent.password == params[:password]
-
-    agent.generate_and_send_otp!
-    return_success("A new code has been sent to #{agent.email}")
-  end
-
-  def verify_otp
-    email = params[:email]&.strip&.downcase
-    code = params[:code]&.strip
-    return_errors!("Email and code are required.", 400) if email.blank? || code.blank?
-
-    agent = Agent.where(email: email).first
-    return_errors!("No account found with that email.", 404) if agent.nil?
-
-    unless agent.otp_code == code && otp_valid?(agent)
-      return_errors!("Invalid or expired code.")
+    if agent.status == "Pending"
+      return_errors!("Your account is pending admin approval. You'll be able to sign in once it's approved.")
+    elsif agent.status == "Inactive"
+      return_errors!("This account has been deactivated. Contact an admin for access.")
     end
 
-    agent.otp_code = nil
-    agent.otp_sent_at = nil
     agent.last_logged_in_at = Time.now
     agent.current_session_id = CurrentAgent.encoded_token(agent)
     unless agent.save
       return_errors!(agent.errors, 400)
     end
     return_success(token: agent.current_session_id, info: agent.as_pos)
+  rescue => e
+    App.logger.error(e.message)
+    App.logger.error(e.backtrace)
+    return_errors!("Some error occurred while signing in.")
   end
 
   # Authenticated (agent_auth_required!) — the currently logged-in agent's
@@ -173,9 +169,9 @@ class App::Services::AgentAuth < App::Services::Base
     (Time.now - agent.reset_sent_at) < RESET_TOKEN_EXPIRATION_TIME
   end
 
-  def otp_valid?(agent)
-    return false if agent.otp_sent_at.nil?
-
-    (Time.now - agent.otp_sent_at) < OTP_EXPIRATION_TIME
+  def unique_slug(name)
+    base = name.to_s.downcase.strip.gsub(/[^a-z0-9]+/, '-').gsub(/\A-+|-+\z/, '')
+    base = "agent" if base.blank?
+    "#{base}-#{SecureRandom.hex(3)}"
   end
 end

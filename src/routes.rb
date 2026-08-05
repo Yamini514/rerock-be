@@ -86,20 +86,39 @@ class App::Routes < Roda
           r.get('info') { ClientAuth[r].info }
           r.put('update') { ClientAuth[r].update_profile }
           r.put('update-password') { ClientAuth[r].update_password }
+
+          # A minimal, safe-fields directory (never the sensitive admin
+          # #to_pos shape) so the portal can resolve the client's own
+          # assigned agent/RAM to a name/avatar/contact — see
+          # components/portal/AdvisorCard.js and services/public_agents.rb
+          # / public_ram.rb's own comments on why this isn't reused from the
+          # fully-open 'public' block below.
+          r.get('agents') { PublicAgents[r].list }
+          r.get('ram') { PublicRam[r].list }
+
+          # Client-submitted ratings/reviews on the client's own assigned
+          # agent/RAM or a property/builder/community they've actually
+          # purchased into — see services/client_reviews.rb for the
+          # ownership checks. Every fresh submission is Pending until an
+          # admin approves it (/admin/reviews).
+          r.on 'reviews' do
+            r.post { ClientReviews[r].create }
+            r.get('mine') { ClientReviews[r].mine }
+          end
         end
       end
 
       # Agent Portal — the sales-agent self-service portal's own auth
-      # (login/verify-otp/resend-otp/forgot-password/reset-password),
-      # wholly separate from the Admin/RAM/Client Portal auth blocks above.
-      # No 'register' route — see services/agent_auth.rb's header comment.
-      # Its own JWT (CurrentAgent, helpers/current_agent.rb) and its own
-      # guard (agent_auth_required!, below). `/api/agents` (admin-only
-      # Agents CRUD, further down) is untouched by any of this.
+      # (register/login/forgot-password/reset-password), wholly separate
+      # from the Admin/RAM/Client Portal auth blocks above. Registration
+      # lands as status "Pending" and needs admin approval (/admin/agents)
+      # before login succeeds — see services/agent_auth.rb. Its own JWT
+      # (CurrentAgent, helpers/current_agent.rb) and its own guard
+      # (agent_auth_required!, below). `/api/agents` (admin-only Agents CRUD,
+      # further down) is untouched by any of this.
       r.on 'agent-portal' do
+        r.post('register') { AgentAuth[r].register }
         r.post('login') { AgentAuth[r].login }
-        r.post('verify-otp') { AgentAuth[r].verify_otp }
-        r.post('resend-otp') { AgentAuth[r].resend_otp }
         r.post('forgot-password') { AgentAuth[r].forgot_password }
         r.post('validate-password-token') { AgentAuth[r].validate_password_token }
         r.post('reset-password') { AgentAuth[r].reset_password }
@@ -176,6 +195,13 @@ class App::Routes < Roda
 
         r.on 'amenities' do
           do_crud(Amenities, r, 'RL')
+        end
+
+        # Approved reviews for a given entity — always forces status:
+        # "Approved" server-side regardless of query params (see
+        # services/public_reviews.rb), so this is safe to leave fully open.
+        r.on 'reviews' do
+          r.get { PublicReviews[r].list }
         end
       end
 
@@ -308,6 +334,13 @@ class App::Routes < Roda
 
         r.on 'testimonials' do
           do_crud(Testimonials, r, 'CRUDL')
+        end
+
+        # Moderation queue for client-submitted ratings/reviews on
+        # Agents/RAM/Properties/Builders/Communities — approve/reject ride
+        # the standard PUT/update like Testimonials above (services/reviews.rb).
+        r.on 'reviews' do
+          do_crud(Reviews, r, 'CRUDL')
         end
 
         r.on 'faqs' do

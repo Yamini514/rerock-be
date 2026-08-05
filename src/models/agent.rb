@@ -60,42 +60,6 @@ class App::Models::Agent < Sequel::Model
     mail.deliver!
   end
 
-  # Per-login 2FA code (not a one-time email-verification code like
-  # Client#generate_and_send_otp! — see migrations/0044's comment). Sent
-  # fresh on every successful password check in services/agent_auth.rb#login.
-  def generate_and_send_otp!
-    self.otp_code = format('%06d', SecureRandom.random_number(1_000_000))
-    self.otp_sent_at = Time.now
-    save
-
-    agent_email = self.email
-    agent_name = self.name
-    code = self.otp_code
-
-    mail = Mail.new do
-      from    'apps@srinishtha.com'
-      to      agent_email
-      subject 'Your REROCK Realty sign-in code'
-      html_part do
-        content_type 'text/html; charset=UTF-8'
-        body <<-HTML
-          <html>
-          <body>
-            <h1>Your sign-in code</h1>
-            <p>Hello #{agent_name},</p>
-            <p>Your verification code is:</p>
-            <p style="font-size: 28px; font-weight: bold; letter-spacing: 4px;">#{code}</p>
-            <p>This code expires in 10 minutes. If you did not attempt to sign in, please ignore this email.</p>
-            <p>Thank you,<br/>REROCK Realty</p>
-          </body>
-          </html>
-        HTML
-      end
-    end
-
-    mail.deliver!
-  end
-
   # Shaped to match the Agent Portal's existing camelCase mock shape
   # (lib/data/agents.js) every portal page/component was written against —
   # same "shape the response to match what the existing frontend already
