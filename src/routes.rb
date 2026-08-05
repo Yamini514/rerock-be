@@ -197,11 +197,73 @@ class App::Routes < Roda
           do_crud(Amenities, r, 'RL')
         end
 
+        # Property tag library (colour-coded badges on property cards) — a
+        # flat, uncategorised list with nothing sensitive in it, same
+        # reuse-the-existing-service pattern as the lookup tables above.
+        r.on 'property-tags' do
+          do_crud(PropertyTags, r, 'RL')
+        end
+
         # Approved reviews for a given entity — always forces status:
         # "Approved" server-side regardless of query params (see
         # services/public_reviews.rb), so this is safe to leave fully open.
         r.on 'reviews' do
           r.get { PublicReviews[r].list }
+        end
+
+        # Published-only blog posts (never Draft) and Approved-only
+        # testimonials — dedicated services that force the status filter
+        # server-side (services/public_blogs.rb / public_testimonials.rb),
+        # unlike the plain do_crud reuse above.
+        r.on 'blogs' do
+          r.get { PublicBlogs[r].list }
+        end
+
+        r.on 'testimonials' do
+          r.get { PublicTestimonials[r].list }
+        end
+
+        # FAQs / Career listings & benefits / homepage hero stats — plain
+        # content with no status/moderation concept and nothing sensitive in
+        # their #to_pos, so these reuse the Admin Portal's own services
+        # directly (same as Properties/Builders/etc. above).
+        r.on 'faqs' do
+          do_crud(Faqs, r, 'RL')
+        end
+
+        r.on 'job-openings' do
+          do_crud(JobOpenings, r, 'RL')
+        end
+
+        r.on 'career-benefits' do
+          do_crud(CareerBenefits, r, 'RL')
+        end
+
+        r.on 'hero-stats' do
+          do_crud(HeroStats, r, 'RL')
+        end
+
+        # Singleton marketing-copy row (investor/rating labels) — read-only
+        # here; #update stays admin-only (routes.rb's admin block).
+        r.on 'homepage-settings' do
+          r.get { HomepageSettings[r].get }
+        end
+
+        # Minimal safe-fields agent directory (see services/public_agents.rb
+        # — never Agents' own #to_pos, which dumps encoded_password/
+        # commission data) — needed by the property-detail and Contact
+        # pages' "Talk to an Advisor" cards. Same service already mounted
+        # under client-portal/me/agents; publicly showing an agent's name/
+        # phone/WhatsApp is the intended lead-gen UX here, not a leak.
+        r.on 'agents' do
+          r.get { PublicAgents[r].list }
+        end
+
+        # Public contact-form submission — creates a real Lead (source:
+        # "Website") instead of the old frontend-only fake toast. See
+        # services/public_contact.rb.
+        r.on 'contact' do
+          r.post { PublicContact[r].create }
         end
       end
 

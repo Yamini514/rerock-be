@@ -7,7 +7,7 @@
 class App::Services::PublicAgents < App::Services::Base
   def model; Agent; end
 
-  SAFE_FIELDS = %i[id slug name role phone whatsapp avatar specialization rating experience_years].freeze
+  SAFE_FIELDS = %i[id slug name role phone whatsapp avatar specialization rating experience_years deals_closed].freeze
 
   def list
     return_success(model.where(status: "Active").order(:name).all.map { |a| a.values.slice(*SAFE_FIELDS) })
