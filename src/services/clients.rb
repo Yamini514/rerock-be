@@ -25,6 +25,25 @@ class App::Services::Clients < App::Services::Base
     return_success(ds.all.map(&:to_pos))
   end
 
+  # Every admin-created client gets a working client-portal login
+  # immediately — a random temporary password (never typed by the admin,
+  # never shown in the admin UI) emailed straight to the client
+  # (Client#send_temporary_password_email), pre-verified since an
+  # admin-provisioned account doesn't need to prove it owns the email
+  # address the way a self-registered one does. The client changes it
+  # afterward via the portal's own existing self-service Update Password
+  # flow — this doesn't need a new reset mechanism of its own.
+  def create
+    client = Client.new(data_for(:save))
+    temp_password = SecureRandom.alphanumeric(10)
+    client.password = temp_password
+    client.email_verified_at = Time.now
+    save(client) do |obj|
+      obj.send_temporary_password_email(temp_password)
+      return_success(obj.to_pos)
+    end
+  end
+
   # Same as Base#update, but also lets the client know their own profile
   # changed — the only difference from the inherited version is the
   # Notification.create after a successful save.

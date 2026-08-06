@@ -31,7 +31,7 @@ class App::Services::Communities < App::Services::Base
   def self.fields
     {
       save: [
-        :slug, :name, :type, :builder_id, :area_id, :location_id, :tagline, :status,
+        :slug, :name, :type, :builder_id, :area_id, :location_id, :locality, :tagline, :status,
         :featured, :trending, :homepage_visibility, :rera, :price_min, :price_max,
         :unit_types, :total_units, :available_units, :possession, :investment_score,
         :growth_pct, :last_price_update, :hero_image, :gallery, :overview, :master_plan,

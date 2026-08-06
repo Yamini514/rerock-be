@@ -62,6 +62,40 @@ class App::Models::Client < Sequel::Model
     mail.deliver!
   end
 
+  # Admin-provisioned account's first password — same `mail` gem/SMTP infra
+  # as send_password_reset_email/generate_and_send_otp! above. Sent instead
+  # of showing the password in the admin UI (worse practice: browser
+  # history/screen-share exposure for no benefit) since the client can
+  # already self-service change it afterward via the portal's existing
+  # Update Password flow.
+  def send_temporary_password_email(temp_password)
+    client_email = self.email
+    client_name = self.name
+
+    mail = Mail.new do
+      from    'apps@srinishtha.com'
+      to      client_email
+      subject 'Your REROCK Realty client portal login'
+      html_part do
+        content_type 'text/html; charset=UTF-8'
+        body <<-HTML
+          <html>
+          <body>
+            <h1>Welcome to REROCK Realty</h1>
+            <p>Hello #{client_name},</p>
+            <p>An account has been created for you on the REROCK Realty client portal. Here is your temporary password:</p>
+            <p style="font-size: 22px; font-weight: bold; letter-spacing: 2px;">#{temp_password}</p>
+            <p>Please log in and change your password from your profile settings as soon as possible.</p>
+            <p>Thank you,<br/>REROCK Realty</p>
+          </body>
+          </html>
+        HTML
+      end
+    end
+
+    mail.deliver!
+  end
+
   # Real email-OTP verification, replacing the old verify-otp page's "any
   # complete 6-digit code succeeds" mock. No SMS gateway exists anywhere in
   # this codebase, so this is emailed (same `mail` gem/SMTP infra as password
