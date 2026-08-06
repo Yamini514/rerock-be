@@ -14,6 +14,7 @@ class App::Services::AgentAuth < App::Services::Base
   def model; Agent; end
 
   RESET_TOKEN_EXPIRATION_TIME = 2 * 60 * 60
+  PHONE_REGEXP = /\A[6-9]\d{9}\z/
 
   # Self-registration lands as `status: "Pending"` — same admin-must-approve
   # gate as RAM Portal's own self-registration (services/ram_auth.rb#register).
@@ -27,8 +28,9 @@ class App::Services::AgentAuth < App::Services::Base
     phone = params[:phone]&.strip
     password = params[:password]
 
-    return_errors!("Name, email and password are required.", 400) if name.blank? || email.blank? || password.blank?
+    return_errors!("Name, email, phone and password are required.", 400) if name.blank? || email.blank? || phone.blank? || password.blank?
     return_errors!("Enter a valid email address.", 400) unless email.match?(URI::MailTo::EMAIL_REGEXP)
+    return_errors!("Enter a valid 10-digit mobile number.", 400) unless phone.match?(PHONE_REGEXP)
     return_errors!("Password must be at least 8 characters.", 400) if password.length < 8
     return_errors!("An account with this email already exists.", 400) if Agent.where(email: email).first
 
@@ -102,6 +104,12 @@ class App::Services::AgentAuth < App::Services::Base
       return_errors!("Enter a valid email address.", 400) unless new_email.match?(URI::MailTo::EMAIL_REGEXP)
       return_errors!("An account with this email already exists.", 400) if Agent.where(email: new_email).exclude(id: agent.id).first
       allowed[:email] = new_email
+    end
+
+    if allowed[:phone].present?
+      new_phone = allowed[:phone].strip
+      return_errors!("Enter a valid 10-digit mobile number.", 400) unless new_phone.match?(PHONE_REGEXP)
+      allowed[:phone] = new_phone
     end
 
     agent.set_fields(allowed, allowed.keys)

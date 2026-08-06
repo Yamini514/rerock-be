@@ -16,6 +16,10 @@ class App::Services::ClientAuth < App::Services::Base
   RESET_TOKEN_EXPIRATION_TIME = 2 * 60 * 60
   OTP_EXPIRATION_TIME = 10 * 60
 
+  NAME_MAX_LENGTH = 60
+  NAME_REGEXP = /\A[a-zA-Z\s'.-]+\z/
+  PHONE_REGEXP = /\A[6-9]\d{9}\z/
+
   # Registration creates the row immediately (unlike RamAuth#register's
   # "Pending admin approval" gate — a retail client browsing/tracking their
   # own portfolio doesn't need admin vetting the way an advisory member
@@ -25,10 +29,14 @@ class App::Services::ClientAuth < App::Services::Base
   def register
     name = params[:name]&.strip
     email = params[:email]&.strip&.downcase
+    phone = params[:phone]&.strip
     password = params[:password]
 
-    return_errors!("Name, email and password are required.", 400) if name.blank? || email.blank? || password.blank?
+    return_errors!("Name, email, phone and password are required.", 400) if name.blank? || email.blank? || phone.blank? || password.blank?
     return_errors!("Enter a valid email address.", 400) unless email.match?(URI::MailTo::EMAIL_REGEXP)
+    return_errors!("Name must be #{NAME_MAX_LENGTH} characters or fewer.", 400) if name.length > NAME_MAX_LENGTH
+    return_errors!("Name can only contain letters, spaces, apostrophes and hyphens.", 400) unless name.match?(NAME_REGEXP)
+    return_errors!("Enter a valid 10-digit mobile number.", 400) unless phone.match?(PHONE_REGEXP)
     return_errors!("Password must be at least 8 characters.", 400) if password.length < 8
     return_errors!("An account with this email already exists.", 400) if Client.where(email: email).first
 
@@ -37,7 +45,7 @@ class App::Services::ClientAuth < App::Services::Base
     client = Client.new(
       name: name,
       email: email,
-      phone: params[:phone],
+      phone: phone,
       city: params[:city],
       type: params[:type].presence || "Individual",
       referral_source: referrer ? "Referral" : params[:referral_source],
@@ -138,6 +146,19 @@ class App::Services::ClientAuth < App::Services::Base
       return_errors!("Enter a valid email address.", 400) unless new_email.match?(URI::MailTo::EMAIL_REGEXP)
       return_errors!("An account with this email already exists.", 400) if Client.where(email: new_email).exclude(id: client.id).first
       allowed[:email] = new_email
+    end
+
+    if allowed[:name].present?
+      new_name = allowed[:name].strip
+      return_errors!("Name must be #{NAME_MAX_LENGTH} characters or fewer.", 400) if new_name.length > NAME_MAX_LENGTH
+      return_errors!("Name can only contain letters, spaces, apostrophes and hyphens.", 400) unless new_name.match?(NAME_REGEXP)
+      allowed[:name] = new_name
+    end
+
+    if allowed[:phone].present?
+      new_phone = allowed[:phone].strip
+      return_errors!("Enter a valid 10-digit mobile number.", 400) unless new_phone.match?(PHONE_REGEXP)
+      allowed[:phone] = new_phone
     end
 
     client.set_fields(allowed, allowed.keys)

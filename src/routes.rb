@@ -144,12 +144,25 @@ class App::Routes < Roda
           # public services/public_site_visits.rb).
           r.on 'site-visits' do
             r.post { ClientSiteVisits[r].create }
+            r.get { ClientSiteVisits[r].mine }
           end
 
           # Document upload — see services/client_documents.rb.
           r.on 'documents' do
             r.post { ClientDocuments[r].create }
             r.get { ClientDocuments[r].mine }
+          end
+
+          # Client's "Saved" (uncapped) and "Shortlist" (capped at 2,
+          # comparison) property lists — see
+          # services/client_saved_properties.rb. Row existence in a single
+          # table (distinguished by `kind`) is membership; `create`/`destroy`
+          # are both idempotent, matching the Heart/Shortlist buttons' own
+          # fire-and-forget sync.
+          r.on 'saved-properties' do
+            r.get { ClientSavedProperties[r].mine }
+            r.post { ClientSavedProperties[r].create }
+            r.post('remove') { ClientSavedProperties[r].destroy }
           end
         end
       end

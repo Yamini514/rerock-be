@@ -14,6 +14,7 @@ class App::Services::RamAuth < App::Services::Base
   def model; RamMember; end
 
   RESET_TOKEN_EXPIRATION_TIME = 2 * 60 * 60
+  PHONE_REGEXP = /\A[6-9]\d{9}\z/
 
   # Self-registration lands as `status: "Pending"` (RAM_STATUSES in
   # lib/data/staff.js) — same "admin must approve" gate the old mock's login
@@ -23,10 +24,12 @@ class App::Services::RamAuth < App::Services::Base
   def register
     name = params[:name]&.strip
     email = params[:email]&.strip&.downcase
+    phone = params[:phone]&.strip
     password = params[:password]
 
-    return_errors!("Name, email and password are required.", 400) if name.blank? || email.blank? || password.blank?
+    return_errors!("Name, email, phone and password are required.", 400) if name.blank? || email.blank? || phone.blank? || password.blank?
     return_errors!("Enter a valid email address.", 400) unless email.match?(URI::MailTo::EMAIL_REGEXP)
+    return_errors!("Enter a valid 10-digit mobile number.", 400) unless phone.match?(PHONE_REGEXP)
     return_errors!("Password must be at least 8 characters.", 400) if password.length < 8
     return_errors!("An account with this email already exists.", 400) if RamMember.where(email: email).first
 
@@ -42,7 +45,7 @@ class App::Services::RamAuth < App::Services::Base
       designation: params[:designation].presence || "RAM",
       region: params[:region].presence || "Unassigned",
       status: "Pending",
-      profile_extra: { phone: params[:phone], referralCode: params[:referral_code] }.compact
+      profile_extra: { phone: phone, referralCode: params[:referral_code] }.compact
     )
     ram.password = password
     save(ram) { |o| return_success(o.as_pos) }

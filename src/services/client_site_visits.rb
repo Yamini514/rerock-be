@@ -70,4 +70,35 @@ class App::Services::ClientSiteVisits < App::Services::Base
       end
     end
   end
+
+  # The client's own scheduled/past site visits — replaces
+  # SiteVisitsClient.js's old local-only mock (lib/data/portalSiteVisits.js).
+  # SiteVisit only stores property_id/agent_slug (models/site_visit.rb), so
+  # this joins in the property's title/slug/locality and the assigned
+  # agent's name rather than pushing that lookup onto the frontend.
+  def mine
+    client = CurrentClient.client_obj
+    return_errors!("Not signed in.", 401) if client.nil?
+
+    lead_ids = Lead.where(client_id: client.id).select(:id)
+    visits = SiteVisit.where(lead_id: lead_ids).order(Sequel.desc(:date), Sequel.desc(:created_at)).all
+    return_success(visits.map { |v| visit_brief(v) })
+  end
+
+  private
+
+  def visit_brief(visit)
+    property = visit.property
+    agent = visit.agent_slug.present? ? Agent.first(slug: visit.agent_slug) : nil
+    {
+      'id' => visit.id,
+      'property_title' => property&.title,
+      'property_slug' => property&.slug,
+      'location' => property&.locality,
+      'advisor_name' => agent&.name,
+      'date' => visit.date,
+      'time' => visit.time,
+      'status' => visit.status,
+    }
+  end
 end
