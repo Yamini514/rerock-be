@@ -25,6 +25,25 @@ class App::Services::Clients < App::Services::Base
     return_success(ds.all.map(&:to_pos))
   end
 
+  # Same as Base#update, but also lets the client know their own profile
+  # changed — the only difference from the inherited version is the
+  # Notification.create after a successful save.
+  def update(data=nil)
+    data ||= data_for(:save)
+    item.set_fields(data, data.keys)
+    save(item) do |obj|
+      Notification.create(
+        audience: "client",
+        recipient_id: obj.id,
+        type: "profile",
+        icon: "UserCog",
+        title: "Your profile was updated",
+        message: "Your account details were updated by our team."
+      )
+      return_success(obj.to_pos)
+    end
+  end
+
   # Status toggles (Active/Inactive), note/communication-log appends, and
   # invested-property adds/removes all ride the standard PUT/update below —
   # every field whitelisted like any other saveable column. The jsonb arrays

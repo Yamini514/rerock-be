@@ -100,4 +100,47 @@ class App::Services::AgentPortal < App::Services::Base
 
     return_success(Client.where(assigned_agent_slug: agent.slug).order(Sequel.desc(:created_at)).all.map(&:to_pos))
   end
+
+  # Documents uploaded by the agent's own assigned clients, awaiting the
+  # agent's verification step (see services/client_documents.rb for the
+  # upload side, services/approvals.rb for the admin-approval side that
+  # follows).
+  def my_documents
+    agent = current_agent
+    return_errors!("Not signed in.", 401) if agent.nil?
+
+    client_ids = Client.where(assigned_agent_slug: agent.slug).select_map(:id)
+    return_success(Document.where(client_id: client_ids).order(Sequel.desc(:created_at)).all.map(&:to_pos))
+  end
+
+  # Agent's "Verified" step — moves a client's document from Pending to
+  # Verified and opens a Pending row in the existing generic Approvals
+  # queue (services/approvals.rb) so it surfaces in the admin dashboard's
+  # PendingApprovalsWidget without any new admin UI. The admin's own
+  # approve/reject on that row is what finally notifies the client (see
+  # Approvals#update).
+  def verify_my_document
+    agent = current_agent
+    return_errors!("Not signed in.", 401) if agent.nil?
+
+    document = Document[rp[:id]]
+    return_errors!("Document not found.", 404) if document.nil?
+    return_errors!("This document isn't from one of your clients.", 403) unless document.client&.assigned_agent_slug == agent.slug
+    return_errors!("This document has already been verified.", 400) unless document.status == "Pending"
+
+    allowed = { status: "Verified", verified_by_agent_slug: agent.slug, verified_at: Time.now }
+    document.set_fields(allowed, allowed.keys)
+    save(document) do |o|
+      Approval.create(
+        type: "Document",
+        title: "Document verification: #{o.name} (#{o.client.name})",
+        requested_by: agent.name,
+        status: "Pending",
+        entity: "Document",
+        entity_id: o.id.to_s,
+        notes: o.notes
+      )
+      return_success(o.to_pos)
+    end
+  end
 end

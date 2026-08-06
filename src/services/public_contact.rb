@@ -26,6 +26,15 @@ class App::Services::PublicContact < App::Services::Base
       status: "New",
       timeline: [{ type: "Note", note: [interest.presence, message].compact.join(" — "), date: Time.now.strftime("%Y-%m-%d") }]
     )
-    save(lead) { return_success("Thanks! An advisor will get back to you within 2 hours.") }
+    save(lead) do
+      Notification.create(
+        audience: "admin",
+        type: "enquiry",
+        icon: "Mail",
+        title: "New enquiry",
+        message: "#{name} submitted an enquiry#{interest.present? ? " about #{interest}" : ""}."
+      )
+      return_success("Thanks! An advisor will get back to you within 2 hours.")
+    end
   end
 end

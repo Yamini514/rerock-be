@@ -60,6 +60,30 @@ class App::Routes < Roda
           r.get('info') { RamAuth[r].info }
           r.put('update') { RamAuth[r].update_profile }
           r.put('update-password') { RamAuth[r].update_password }
+
+          # Admin-broadcast notifications targeted at audience "ram" — see
+          # services/ram_notifications.rb. Read state is per-RAM-member
+          # (notification_reads join table), not a shared column.
+          r.on 'notifications' do
+            r.get { RamNotifications[r].mine }
+            r.post('mark-all-read') { RamNotifications[r].mark_all_read }
+            r.post(Integer) { |id| RamNotifications[r, id: id].mark_read }
+          end
+
+          # The RAM's own assigned clients — see services/ram_portal.rb.
+          r.on 'clients' do
+            r.get { RamPortal[r].my_clients }
+          end
+
+          # "Recommend Property" to one of the RAM's own assigned clients —
+          # see services/ram_recommendations.rb. Backs the real "My
+          # Recommendations" page (previously lib/data/recommendations.js's
+          # in-memory mock).
+          r.on 'recommendations' do
+            r.post { RamRecommendations[r].create }
+            r.get('mine') { RamRecommendations[r].mine }
+            r.put(Integer) { |id| RamRecommendations[r, id: id].update }
+          end
         end
       end
 
@@ -104,6 +128,28 @@ class App::Routes < Roda
           r.on 'reviews' do
             r.post { ClientReviews[r].create }
             r.get('mine') { ClientReviews[r].mine }
+          end
+
+          # Admin-broadcast notifications targeted at audience "client" —
+          # see services/client_notifications.rb. Read state is
+          # per-client (notification_reads join table), not a shared column.
+          r.on 'notifications' do
+            r.get { ClientNotifications[r].mine }
+            r.post('mark-all-read') { ClientNotifications[r].mark_all_read }
+            r.post(Integer) { |id| ClientNotifications[r, id: id].mark_read }
+          end
+
+          # Logged-in-client "Book a Site Visit" — see
+          # services/client_site_visits.rb (the guest counterpart is the
+          # public services/public_site_visits.rb).
+          r.on 'site-visits' do
+            r.post { ClientSiteVisits[r].create }
+          end
+
+          # Document upload — see services/client_documents.rb.
+          r.on 'documents' do
+            r.post { ClientDocuments[r].create }
+            r.get { ClientDocuments[r].mine }
           end
         end
       end
@@ -155,6 +201,30 @@ class App::Routes < Roda
 
           r.on 'clients' do
             r.get { AgentPortal[r].my_clients }
+          end
+
+          # Admin-broadcast notifications targeted at audience "agent" —
+          # see services/agent_notifications.rb. Read state is per-agent
+          # (notification_reads join table), not a shared column.
+          r.on 'notifications' do
+            r.get { AgentNotifications[r].mine }
+            r.post('mark-all-read') { AgentNotifications[r].mark_all_read }
+            r.post(Integer) { |id| AgentNotifications[r, id: id].mark_read }
+          end
+
+          # "Recommend Property" to one of the agent's own assigned clients
+          # — see services/agent_recommendations.rb. Replaces
+          # components/agent/RecommendModal.js's old toast-only stub.
+          r.on 'recommendations' do
+            r.post { AgentRecommendations[r].create }
+            r.get('mine') { AgentRecommendations[r].mine }
+          end
+
+          # Client documents awaiting the agent's verification — see
+          # services/agent_portal.rb#my_documents/#verify_my_document.
+          r.on 'documents' do
+            r.get { AgentPortal[r].my_documents }
+            r.put(Integer) { |id| AgentPortal[r, id: id].verify_my_document }
           end
         end
       end
@@ -264,6 +334,13 @@ class App::Routes < Roda
         # services/public_contact.rb.
         r.on 'contact' do
           r.post { PublicContact[r].create }
+        end
+
+        # Public "Book a Site Visit" submission — creates a real Lead +
+        # SiteVisit (source: "Website") instead of BookVisitModal's old
+        # toast-only fake submit. See services/public_site_visits.rb.
+        r.on 'site-visits' do
+          r.post { PublicSiteVisits[r].create }
         end
       end
 

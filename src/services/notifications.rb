@@ -40,7 +40,7 @@ class App::Services::Notifications < App::Services::Base
   def self.fields
     {
       save: [
-        :type, :icon, :title, :message, :read
+        :type, :icon, :title, :message, :read, :audience
       ]
     }
   end
