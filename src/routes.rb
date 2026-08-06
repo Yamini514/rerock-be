@@ -196,6 +196,7 @@ class App::Routes < Roda
 
           r.on 'site-visits' do
             r.get { AgentPortal[r].my_site_visits }
+            r.post { AgentPortal[r].create_my_site_visit }
             r.put(Integer) { |id| AgentPortal[r, id: id].update_my_site_visit }
           end
 
@@ -225,6 +226,13 @@ class App::Routes < Roda
           r.on 'documents' do
             r.get { AgentPortal[r].my_documents }
             r.put(Integer) { |id| AgentPortal[r, id: id].verify_my_document }
+          end
+
+          # Performance page — YTD summary tiles (agent's own real aggregate
+          # columns) plus a 6-month trend computed from this agent's own
+          # Leads/Deals/SiteVisits/Reviews. See services/agent_portal.rb#my_performance.
+          r.on 'performance' do
+            r.get { AgentPortal[r].my_performance }
           end
         end
       end

@@ -76,6 +76,79 @@ class App::Services::AgentPortal < App::Services::Base
     return_success(SiteVisit.where(agent_slug: agent.slug).order(Sequel.desc(:created_at)).all.map(&:to_pos))
   end
 
+  # Agent-initiated site visit — the frontend's "Schedule Site Visit" flow
+  # (Property Detail page's modal, and the Lead Detail page's own header
+  # button) both used to fake this client-side with a toast + setTimeout,
+  # creating nothing. `agent_slug`/`status` are server-set, never trusted
+  # from the client — same "an agent can't reassign who owns this record"
+  # reasoning as update_my_deal/update_my_lead/update_my_site_visit above.
+  def create_my_site_visit
+    agent = current_agent
+    return_errors!("Not signed in.", 401) if agent.nil?
+
+    client_name = params[:client_name]&.strip
+    return_errors!("Client name is required.", 400) if client_name.blank?
+    return_errors!("A visit date is required.", 400) if params[:date].blank?
+
+    date = begin
+      Date.parse(params[:date].to_s)
+    rescue ArgumentError, TypeError
+      nil
+    end
+    return_errors!("Enter a valid visit date.", 400) if date.nil?
+    return_errors!("Visit date can't be in the past.", 400) if date < Date.today
+
+    lead = nil
+    if params[:lead_id].present?
+      lead = Lead[params[:lead_id]]
+      return_errors!("Lead not found.", 404) if lead.nil?
+      return_errors!("This lead isn't assigned to you.", 403) unless lead.agent_slug == agent.slug
+    end
+
+    property = params[:property_id].present? ? Property[params[:property_id]] : nil
+
+    visit = SiteVisit.new(
+      lead_id: lead&.id,
+      property_id: params[:property_id].presence,
+      community_id: params[:community_id].presence,
+      client_name: client_name,
+      date: date,
+      time: params[:time].presence,
+      notes: params[:notes]&.strip.presence,
+      agent_slug: agent.slug,
+      status: "Scheduled"
+    )
+
+    save(visit) do |o|
+      Notification.create(
+        audience: "admin",
+        type: "visit",
+        icon: "CalendarCheck",
+        title: "New site visit scheduled",
+        message: "#{agent.name} scheduled a visit for #{client_name}#{property ? " at #{property.title}" : ""}."
+      )
+
+      # Only ever notify a client we've actually verified — never a guess
+      # off the free-text client_name above (an agent can type anything
+      # there, e.g. scheduling for a walk-in prospect with no account yet).
+      # lead.client_id (migrations/0050) is only ever set when that lead was
+      # genuinely linked to a real Client account, so this is a real
+      # identity match, not a name lookup.
+      if lead&.client_id
+        Notification.create(
+          audience: "client",
+          recipient_id: lead.client_id,
+          type: "visit",
+          icon: "CalendarCheck",
+          title: "Site visit scheduled",
+          message: "Your advisor #{agent.name} scheduled a site visit#{property ? " for #{property.title}" : ""} on #{date.strftime('%d %b %Y')}."
+        )
+      end
+
+      return_success(o.to_pos)
+    end
+  end
+
   def update_my_site_visit
     agent = current_agent
     return_errors!("Not signed in.", 401) if agent.nil?
@@ -142,5 +215,103 @@ class App::Services::AgentPortal < App::Services::Base
       )
       return_success(o.to_pos)
     end
+  end
+
+  # Backs the Performance page (frontend's app/agent/(portal)/performance) —
+  # previously 100% mock data keyed by 4 hardcoded demo slugs
+  # (lib/data/performance.js), so it rendered blank for every real agent
+  # (`if (!performance || !summary) return null`). Two different data
+  # strategies, deliberately:
+  #
+  # `summary`'s YTD-labeled tiles read straight off the agent's own already-
+  # real, already-maintained aggregate columns (leads_assigned/deals_closed/
+  # revenue/commission_earned/conversion_rate) — same "the agents table's own
+  # performance columns" precedent Reports#commission already established.
+  # These are lifetime-to-date totals, not actually reset every Jan 1 (no
+  # such column/reset job exists) — same caveat Reports#revenue already
+  # documents for its own numbers.
+  #
+  # `monthly`, by contrast, has no backing column at all except
+  # commission_monthly — leads/deals/visits-by-month don't exist anywhere,
+  # mock or real — so it's computed on the fly from this agent's own
+  # Leads/Deals/SiteVisits, grouped by month in Ruby (same "group jsonb/rows
+  # in Ruby rather than raw SQL" style Reports#revenue already uses for its
+  # commission_monthly trend).
+  def my_performance
+    agent = current_agent
+    return_errors!("Not signed in.", 401) if agent.nil?
+
+    leads = Lead.where(agent_slug: agent.slug).all
+    closed_deals = Deal.where(agent_slug: agent.slug, stage: "Closed").all
+    visits = SiteVisit.where(agent_slug: agent.slug).all
+    # Client-submitted, admin-approved ratings on this agent (see
+    # services/client_reviews.rb) — the only real source "client
+    # satisfaction" can come from; stars (1-5) scaled to a 0-100 score to
+    # match the mock's own percentage shape.
+    reviews = Review.where(reviewable_type: "Agent", reviewable_id: agent.id, status: "Approved").all
+
+    leads_by_month = leads.group_by { |l| month_key(l.created_at) }
+    deals_by_month = closed_deals.group_by { |d| month_key(d.closing_date || d.created_at) }
+    visits_by_month = visits.group_by { |v| month_key(v.date || v.created_at) }
+    reviews_by_month = reviews.group_by { |r| month_key(r.created_at) }
+
+    monthly = last_six_months.map do |m|
+      key = m.strftime("%Y-%m")
+      month_leads = leads_by_month[key] || []
+      month_deals = deals_by_month[key] || []
+      month_visits = visits_by_month[key] || []
+      month_reviews = reviews_by_month[key] || []
+
+      leads_count = month_leads.size
+      deals_count = month_deals.size
+
+      {
+        month: m.strftime("%b"),
+        revenue: month_deals.sum { |d| d.value || 0 },
+        leads_generated: leads_count,
+        deals_closed_count: deals_count,
+        visits: month_visits.size,
+        # Derived, not stored — same "computed from real columns, documented
+        # as an approximation" convention as Reports#revenue's implied_revenue.
+        conversion_rate: leads_count.zero? ? 0 : ((deals_count / leads_count.to_f) * 100).round(1),
+        satisfaction: avg_satisfaction(month_reviews),
+      }
+    end
+
+    # Same ranking basis (revenue, desc) as Reports#commission's admin-wide
+    # table — just resolved down to "where does *this* agent land" instead of
+    # returning every agent's row.
+    ranked_slugs = Agent.order(Sequel.desc(:revenue)).select_map(:slug)
+    rank = ranked_slugs.index(agent.slug)
+
+    summary = {
+      total_leads_ytd: agent.leads_assigned || 0,
+      avg_conversion_rate: agent.conversion_rate || 0,
+      deals_closed_ytd: agent.deals_closed || 0,
+      total_sales_ytd: agent.revenue || 0,
+      commission_ytd: agent.commission_earned || 0,
+      client_satisfaction: avg_satisfaction(reviews),
+      monthly_ranking: rank.nil? ? nil : rank + 1,
+    }
+
+    return_success(summary: summary, monthly: monthly)
+  end
+
+  private
+
+  def month_key(date_or_time)
+    date_or_time&.strftime("%Y-%m")
+  end
+
+  # Oldest -> newest, 6 calendar months including the current one — same
+  # window/ordering the old mock's Feb..Jul sample series used.
+  def last_six_months
+    (0..5).to_a.reverse.map { |i| i.months.ago.beginning_of_month }
+  end
+
+  def avg_satisfaction(reviews)
+    return nil if reviews.empty?
+
+    ((reviews.sum(&:stars) / reviews.size.to_f) * 20).round(1)
   end
 end
