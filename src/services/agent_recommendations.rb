@@ -4,7 +4,9 @@
 # established across this portal's other services. Replaces
 # components/agent/RecommendModal.js's old toast-only stub (it never
 # called any API). An agent can only recommend to their own assigned
-# clients (Client#assigned_agent_slug == Agent#slug).
+# clients (Client#assigned_agent_slug == Agent#slug), and only properties
+# assigned to them (Property#agent_slug == Agent#slug, or a property one of
+# their own leads is interested in — see #create's own comment).
 class App::Services::AgentRecommendations < App::Services::Base
   def model; Recommendation; end
 
@@ -18,6 +20,18 @@ class App::Services::AgentRecommendations < App::Services::Base
 
     property = Property.first(slug: params[:property_slug])
     return_errors!("Property not found.", 404) if property.nil?
+
+    # "Assigned to this agent" — same definition the Agent Portal's own
+    # Assigned Properties page already uses for what it shows/lets an agent
+    # act on (PropertiesClient.js's `myProperties`): either a direct
+    # assignment (Property#agent_slug), or the property is one this agent's
+    # own lead is interested in. Without this check, any valid property_slug
+    # would go through — the frontend's Properties-page filtering was never
+    # a real rule, just what that one page happened to list.
+    assigned_via_lead = Lead.where(agent_slug: agent.slug, property_id: property.id).first.present?
+    unless property.agent_slug == agent.slug || assigned_via_lead
+      return_errors!("This property isn't assigned to you.", 403)
+    end
 
     recommendation = Recommendation.new(
       client_id: client.id,

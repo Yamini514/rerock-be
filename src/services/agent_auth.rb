@@ -37,7 +37,7 @@ class App::Services::AgentAuth < App::Services::Base
       name: name,
       email: email,
       phone: phone,
-      role: "Investment Advisor",
+      role: "Agent",
       specialization: params[:specialization].presence,
       status: "Pending"
     )
