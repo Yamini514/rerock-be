@@ -13,7 +13,11 @@ class App::Models::Lead < Sequel::Model
   # when present; note the Won->Client auto-conversion flow
   # (services/leads.rb#update) has its own, stricter "email required to
   # convert" gate — that's a business-flow rule, not a data-shape one, so it
-  # lives in the service, not here.
+  # lives in the service, not here. The RAM Portal's "New Client" lead
+  # capture (services/ram_portal.rb#create_my_lead) additionally requires
+  # email at the service level — every creation path still always collects
+  # a real phone number, so `client_phone` stays a hard presence requirement
+  # here (it's also a NOT NULL column — migrations/0014).
   def validate
     super
     validates_presence [:client_name, :client_phone]

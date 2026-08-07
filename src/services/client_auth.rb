@@ -169,11 +169,13 @@ class App::Services::ClientAuth < App::Services::Base
     client = CurrentClient.client_obj
     return_errors!("Not signed in.", 401) if client.nil?
 
-    if client.password == params[:current_password]
+    if client.password != params[:current_password]
+      return_errors!("Invalid current password.")
+    elsif params[:new_password] == params[:current_password]
+      return_errors!("New password must be different from your current password.")
+    else
       client.password = params[:new_password]
       save(client) { return_success("Password updated successfully.") }
-    else
-      return_errors!("Invalid current password.")
     end
   end
 

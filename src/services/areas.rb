@@ -10,7 +10,15 @@ class App::Services::Areas < App::Services::Base
     if qs[:search].present?
       ds = ds.where(Sequel.like(:name, "%#{qs[:search]}%", case_insensitive: true))
     end
-    return_success(ds.all.map(&:to_pos))
+
+    property_counts, community_counts, builder_counts = stats_by_area
+    return_success(ds.all.map { |a|
+      a.to_pos.merge(
+        'property_count' => property_counts[a.id] || 0,
+        'community_count' => community_counts[a.id] || 0,
+        'builder_count' => builder_counts[a.id] || 0
+      )
+    })
   end
 
   # lib/data/areas.js's addArea defaults displayOrder to "end of the list"
@@ -33,5 +41,28 @@ class App::Services::Areas < App::Services::Base
         :lat, :lng, :description, :display_order, :active, :seo, :archived
       ]
     }
+  end
+
+  private
+
+  # Replaces the frontend's old lib/data/areas.js `areaStats` mock (computed
+  # over fixture properties/communities) with real aggregates over the live
+  # `properties`/`communities` tables — same "exclude archived, group by FK"
+  # convention as PropertyTypes#property_stats_by_type. builder_count is
+  # deliberately derived from this area's Properties (not Communities),
+  # matching the mock's own areaStats() exactly.
+  def stats_by_area
+    active_properties = Property.where(archived: false)
+    active_communities = Community.where(archived: false)
+
+    property_counts = active_properties.group_and_count(:area_id).as_hash(:area_id, :count)
+    community_counts = active_communities.group_and_count(:area_id).as_hash(:area_id, :count)
+    # Distinct (area_id, builder_id) pairs, wrapped in a subquery (`from_self`)
+    # so the outer GROUP BY counts distinct builders per area rather than
+    # every property row.
+    builder_counts = active_properties.select(:area_id, :builder_id).distinct.from_self
+      .group_and_count(:area_id).as_hash(:area_id, :count)
+
+    [property_counts, community_counts, builder_counts]
   end
 end
