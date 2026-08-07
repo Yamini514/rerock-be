@@ -40,7 +40,7 @@ class App::Services::AgentPortal < App::Services::Base
     return_errors!("Deal not found.", 404) if deal.nil?
     return_errors!("This deal isn't assigned to you.", 403) unless deal.agent_slug == agent.slug
 
-    allowed = params.slice(:stage, :probability, :value, :closing_date)
+    allowed = params.slice(:stage, :probability, :value, :closing_date, :notes)
     deal.set_fields(allowed, allowed.keys)
     save(deal) { |o| return_success(o.to_pos) }
   end
@@ -159,7 +159,7 @@ class App::Services::AgentPortal < App::Services::Base
 
     allowed = params.slice(:status, :notes, :date, :time)
     visit.set_fields(allowed, allowed.keys)
-    save(visit) { |o| return_success(o.to_pos) }
+    save(visit) { |o| o.ensure_deal_for_completion!; return_success(o.to_pos) }
   end
 
   # Read-only: an agent can see their own assigned clients' CRM record, but

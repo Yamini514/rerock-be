@@ -28,10 +28,10 @@ class App::Models::Client < Sequel::Model
     validates_format(EMAIL_REGEXP, :email, message: 'is not a valid email address') if email.present?
     validates_unique(:email)
     errors.add(:phone, 'must be a 10-digit phone number') if phone.present? && phone.gsub(/\D/, '').length != 10
-    if assigned_ram_id.present? && (new? || column_changed?(:assigned_ram_id)) && RamMember.where(slug: assigned_ram_id).first.nil?
+    if assigned_ram_id.present? && (new? || column_changed?(:assigned_ram_id)) && App::Models::RamMember.where(slug: assigned_ram_id).first.nil?
       errors.add(:assigned_ram_id, 'must match an existing RAM team member')
     end
-    if assigned_agent_slug.present? && (new? || column_changed?(:assigned_agent_slug)) && Agent.where(slug: assigned_agent_slug).first.nil?
+    if assigned_agent_slug.present? && (new? || column_changed?(:assigned_agent_slug)) && App::Models::Agent.where(slug: assigned_agent_slug).first.nil?
       errors.add(:assigned_agent_slug, 'must match an existing agent')
     end
   end
