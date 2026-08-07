@@ -13,12 +13,48 @@ class App::Services::Amenities < App::Services::Base
     if qs[:search].present?
       ds = ds.where(Sequel.like(:name, "%#{qs[:search]}%", case_insensitive: true))
     end
-    return_success(ds.all.map(&:to_pos))
+
+    if qs.key?(:page)
+      total = ds.count
+      rows = ds.limit(limit).offset(offset).all
+      return_success(rows.map { |a| with_usage(a) }, meta: { total: total, page: (qs[:page] || 1).to_i, page_size: page_size })
+    else
+      return_success(ds.all.map { |a| with_usage(a) })
+    end
   end
 
   def self.fields
     {
       save: [:slug, :name, :icon, :category, :active]
     }
+  end
+
+  # `amenity_ids` on both Property and Community is a plain Postgres
+  # integer[] (no FK, migrations/0011 & 0012 — see ARCHITECTURE.md), so
+  # nothing at the DB level stops a delete from silently orphaning ids
+  # inside those arrays. The admin tab's own pre-delete usage check
+  # (AmenitiesLibraryTab.js) is client-side only and can be bypassed by a
+  # direct API call — this is the real, unbypassable guard underneath it.
+  def delete
+    referenced_properties, referenced_communities = reference_counts(item.id)
+    if referenced_properties > 0 || referenced_communities > 0
+      return_errors!(
+        "Cannot delete: still used by #{referenced_properties} propert#{referenced_properties == 1 ? 'y' : 'ies'} and #{referenced_communities} communit#{referenced_communities == 1 ? 'y' : 'ies'}.",
+        409
+      )
+    end
+    super
+  end
+
+  private
+
+  def reference_counts(amenity_id)
+    matcher = Sequel.pg_array_op(:amenity_ids).contains(Sequel.pg_array([amenity_id], :integer))
+    [Property.where(matcher).count, Community.where(matcher).count]
+  end
+
+  def with_usage(amenity)
+    properties_count, communities_count = reference_counts(amenity.id)
+    amenity.to_pos.merge('usage' => properties_count + communities_count)
   end
 end

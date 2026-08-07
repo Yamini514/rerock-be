@@ -6,6 +6,8 @@ class App::Services::Referrals < App::Services::Base
   # display_order here either, same as Leads/SiteVisits).
   def list
     ds = model.order(Sequel.desc(:created_at))
+    ds = ds.where(archived: qs[:archived].to_s == 'true') if qs.key?(:archived)
+    ds = ds.where(ram_id: qs[:ram_id]) if qs[:ram_id].present?
     ds = ds.where(type: qs[:type]) if qs[:type].present?
     ds = ds.where(status: qs[:status]) if qs[:status].present?
     if qs[:search].present?
@@ -19,16 +21,23 @@ class App::Services::Referrals < App::Services::Base
         Sequel.like(:referrer, term, case_insensitive: true) | Sequel.like(:referred, term, case_insensitive: true)
       )
     end
-    return_success(ds.all.map(&:to_pos))
+
+    if qs.key?(:page)
+      total = ds.count
+      return_success(ds.limit(limit).offset(offset).all.map(&:to_pos), meta: { total: total, page: (qs[:page] || 1).to_i, page_size: page_size })
+    else
+      return_success(ds.all.map(&:to_pos))
+    end
   end
 
   # Status transitions and reward/date edits all ride the standard
   # PUT/update below — every field is just whitelisted like any other
-  # saveable column.
+  # saveable column. `ram_id` filter above added for the RAM Portal's own
+  # scoped `my_referrals` (services/ram_portal.rb).
   def self.fields
     {
       save: [
-        :ram_id, :type, :referrer, :referred, :status, :reward, :date
+        :ram_id, :type, :referrer, :referred, :status, :reward, :date, :payout_status, :archived
       ]
     }
   end

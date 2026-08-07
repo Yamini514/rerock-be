@@ -1,10 +1,9 @@
-# The RAM Portal's own scoped slice of the CRM — currently just the RAM's
-# own assigned clients (needed so a RAM member has a real recipient list for
+# The RAM Portal's own scoped slice of the CRM — the RAM's own assigned
+# clients (needed so a RAM member has a real recipient list for
 # services/ram_recommendations.rb), same "re-expose the admin table,
 # filtered server-side to the authenticated identity" pattern as
-# services/agent_portal.rb#my_clients. RAM has no deals/leads/site-visits
-# scoped views today (unlike Agent), so this stays minimal rather than
-# mirroring AgentPortal's full breadth speculatively.
+# services/agent_portal.rb#my_clients, plus a create-only Leads endpoint
+# (see create_my_lead below).
 class App::Services::RamPortal < App::Services::Base
   def current_ram
     CurrentRam.ram_obj
@@ -15,5 +14,105 @@ class App::Services::RamPortal < App::Services::Base
     return_errors!("Not signed in.", 401) if ram.nil?
 
     return_success(Client.where(assigned_ram_id: ram.slug).order(Sequel.desc(:created_at)).all.map(&:to_pos))
+  end
+
+  # "New Client" branch of RecommendPropertyModal.js — a brand-new contact
+  # has no portal account yet, so there's no client_id a Recommendation
+  # could attach to (see services/ram_recommendations.rb#create). This
+  # captures them as a real Lead instead, same shape/ownership convention
+  # as AgentPortal#create_my_site_visit: server-set ram_id, never trusted
+  # from the client. Once this contact gets a client portal account, the
+  # RAM can send them a real recommendation via the "Existing Client" path.
+  #
+  # Both phone and email are mandatory for this endpoint (spec change) —
+  # Lead#validate already enforces client_phone's presence/format (it's also
+  # a NOT NULL column, migrations/0014), so the explicit check below is what
+  # additionally makes email mandatory here specifically.
+  def create_my_lead
+    ram = current_ram
+    return_errors!("Not signed in.", 401) if ram.nil?
+    return_errors!("Email is required.", 400) if params[:client_email].blank?
+
+    lead = Lead.new(
+      client_name: params[:client_name]&.strip,
+      client_phone: params[:client_phone]&.strip,
+      client_email: params[:client_email]&.strip,
+      # Optional — the Referrals page's "Refer a Client" flow lets a RAM
+      # note which property the referred contact is interested in;
+      # RecommendPropertyModal's "New Client" flow doesn't collect one, so
+      # this stays nil there.
+      property_id: params[:property_id].presence,
+      source: params[:source].presence || "RAM",
+      ram_id: ram.slug,
+      status: "New"
+    )
+
+    save(lead) do |o|
+      Notification.create(
+        audience: "admin",
+        type: "lead",
+        icon: "UserPlus",
+        title: "New lead captured",
+        message: "#{ram.name} added a new lead: #{o.client_name}."
+      )
+      return_success(o.to_pos)
+    end
+  end
+
+  # The RAM's own referral-program entries — real Referral rows
+  # (services/referrals.rb, already admin-CRUD'd), scoped to this RAM via
+  # `ram_id`. That column/filter already existed specifically for this
+  # (see referrals.rb's own comment), just never had a RAM-facing route
+  # until now. `reward`/`payout_status` are admin-set (a RAM setting their
+  # own commission would be a business-logic hole), so they're read-only
+  # here — visible on `mine`, never writable via create/update below.
+  def my_referrals
+    ram = current_ram
+    return_errors!("Not signed in.", 401) if ram.nil?
+
+    return_success(Referral.where(ram_id: ram.slug).order(Sequel.desc(:created_at)).all.map(&:to_pos))
+  end
+
+  # "Refer a Client" — the RAM personally sourcing a new prospect into the
+  # business (as opposed to an existing client/agent referring someone,
+  # which stays an admin-entered "Client Referral"/"Agent Referral" row).
+  # Companion to create_my_lead: the frontend calls both so the contact's
+  # phone/email/property-interest land on a real Lead while this row tracks
+  # them through the referral-program funnel using the same
+  # Enquiry Stage -> Site Visit Scheduled -> Purchase Completed vocabulary
+  # as the admin CRM (lib/data/referrals.js's REFERRAL_STATUSES) — not the
+  # old RAM-only mock's unrelated Pending/Qualified/Converted/Lost.
+  def create_my_referral
+    ram = current_ram
+    return_errors!("Not signed in.", 401) if ram.nil?
+    return_errors!("Referred person's name is required.", 400) if params[:referred].blank?
+
+    referral = Referral.new(
+      ram_id: ram.slug,
+      type: "RAM Referral",
+      referrer: ram.name,
+      referred: params[:referred]&.strip,
+      status: "Enquiry Stage",
+      reward: 0,
+      date: Date.today
+    )
+
+    save(referral) { |o| return_success(o.to_pos) }
+  end
+
+  # Status transitions only (Enquiry Stage -> Site Visit Scheduled ->
+  # Purchase Completed) — same "the portal can move its own record through
+  # the funnel, but never touch reward/payout" reasoning as create above.
+  def update_my_referral
+    ram = current_ram
+    return_errors!("Not signed in.", 401) if ram.nil?
+
+    referral = Referral[rp[:id]]
+    return_errors!("Referral not found.", 404) if referral.nil?
+    return_errors!("This referral isn't yours.", 403) unless referral.ram_id == ram.slug
+
+    allowed = params.slice(:status)
+    referral.set_fields(allowed, allowed.keys)
+    save(referral) { |o| return_success(o.to_pos) }
   end
 end

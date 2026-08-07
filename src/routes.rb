@@ -5,12 +5,80 @@ class App::Routes < Roda
     { status: 'error', data: 'Not Found' }
   end
 
+  # Maps a do_crud'd resource's class name to the real permission-module key
+  # already defined and assignable via the Roles admin UI (frontend's
+  # lib/data/staff.js#permissionModules) — NOT a mechanical klass.name
+  # derivation, since several backend resource names don't match their real
+  # module key 1:1 (MediaItems -> "mediaLibrary", Agents -> "agentNetwork",
+  # Blogs/Testimonials -> the combined "marketing" bucket that role's own
+  # description groups them under). Resources with NO entry here are
+  # deliberately left unenforced (product decision, not an oversight) rather
+  # than guessed at or blocked outright — many do_crud'd resources (Reviews,
+  # Approvals, SeoPages, HeroStats, Invoices, Payments, Refunds, Taxes,
+  # FollowUps, Leads, Clients, Deals, Collections, Amenities, PropertyTags,
+  # ...) have no corresponding module in the taxonomy at all yet, and a
+  # mechanical "block everyone but super admin" default would lock out real
+  # staff using those features today.
+  RESOURCE_PERMISSION_MODULES = {
+    'Communities' => 'communities',
+    'Properties' => 'properties',
+    'PropertyTypes' => 'propertyTypes',
+    'Builders' => 'builders',
+    'Locations' => 'locations',
+    'Areas' => 'areas',
+    'Agents' => 'agentNetwork',
+    'MediaItems' => 'mediaLibrary',
+    'Notifications' => 'notifications',
+    'Users' => 'users',
+    'Roles' => 'roles',
+    'ActivityLogs' => 'activityLogs',
+    'AuditLogs' => 'auditLogs',
+    'Blogs' => 'marketing',
+    'Testimonials' => 'marketing',
+    'PriceHistories' => 'pricing',
+    # CRM — the real taxonomy has one flat `crm` module (not a per-resource
+    # one), covering all five CRM sub-resources.
+    'Leads' => 'crm',
+    'Clients' => 'crm',
+    'FollowUps' => 'crm',
+    'SiteVisits' => 'crm',
+    'Referrals' => 'crm',
+  }.freeze
+
+  ACTION_FLAGS = { 'C' => 'create', 'R' => 'view', 'L' => 'view', 'U' => 'edit', 'D' => 'delete' }.freeze
+
   def do_crud(klass, r, only='CRUDL', opts = {})
-    r.post { klass[r, opts].create } if only.include?('C')
-    r.get(Integer) {|id| klass[r, opts.merge(id: id)].get} if only.include?('R')
-    r.get { klass[r, opts].list } if only.include?('L')
-    r.put(Integer) {|id| klass[r, opts.merge(id: id)].update } if only.include?('U')
-    r.delete(Integer) {|id| klass[r, opts.merge(id: id)].delete } if only.include?('D')
+    module_key = RESOURCE_PERMISSION_MODULES[klass.name.split('::').last]
+    r.post { require_permission!(module_key, ACTION_FLAGS['C']); klass[r, opts].create } if only.include?('C')
+    r.get(Integer) {|id| require_permission!(module_key, ACTION_FLAGS['R']); klass[r, opts.merge(id: id)].get} if only.include?('R')
+    r.get { require_permission!(module_key, ACTION_FLAGS['L']); klass[r, opts].list } if only.include?('L')
+    r.put(Integer) {|id| require_permission!(module_key, ACTION_FLAGS['U']); klass[r, opts.merge(id: id)].update } if only.include?('U')
+    r.delete(Integer) {|id| require_permission!(module_key, ACTION_FLAGS['D']); klass[r, opts.merge(id: id)].delete } if only.include?('D')
+  end
+
+  # Dark-launched on purpose: fully inert (returns immediately) unless
+  # ENV['ENFORCE_PERMISSIONS'] is explicitly set to 'true'. `has_permission?`
+  # (helpers/current_user.rb) already short-circuits true for a super admin
+  # and false for a nil user, so this only ever needs to check the flag
+  # itself. `module_key` is nil for every resource not in
+  # RESOURCE_PERMISSION_MODULES above — deliberately a no-op for those,
+  # matching the "leave unmapped resources unenforced" decision.
+  #
+  # Rollout, when this environment is ready to flip the switch: backfill
+  # every existing seeded Role's `permissions` array (cross-referenced
+  # against real audit-log activity, which already records who did what) so
+  # no currently-working staff user loses access on cutover, verify in
+  # staging, THEN set ENFORCE_PERMISSIONS=true. Until that backfill happens,
+  # leave this unset/false — flipping it on a live system with unaudited
+  # role permissions risks locking out real staff.
+  def require_permission!(module_key, action)
+    return unless ENV['ENFORCE_PERMISSIONS'] == 'true'
+    return if module_key.nil?
+
+    flag = "#{module_key}.#{action}"
+    unless App.cu.has_permission?(flag)
+      request.halt(403, {'Content-Type' => 'application/json'}, { status: 'error', data: "Missing permission: #{flag}" }.to_json)
+    end
   end
 
   route do |r|
@@ -73,6 +141,22 @@ class App::Routes < Roda
           # The RAM's own assigned clients — see services/ram_portal.rb.
           r.on 'clients' do
             r.get { RamPortal[r].my_clients }
+          end
+
+          # Create-only: capture a brand-new contact (no portal account yet)
+          # as a real Lead — see services/ram_portal.rb#create_my_lead.
+          r.on 'leads' do
+            r.post { RamPortal[r].create_my_lead }
+          end
+
+          # The RAM's own referral-program entries — see
+          # services/ram_portal.rb#my_referrals/#create_my_referral/
+          # #update_my_referral. Status-only update; reward/payout stay
+          # admin-set via the real (admin) Referrals CRUD further down.
+          r.on 'referrals' do
+            r.get { RamPortal[r].my_referrals }
+            r.post { RamPortal[r].create_my_referral }
+            r.put(Integer) { |id| RamPortal[r, id: id].update_my_referral }
           end
 
           # "Recommend Property" to one of the RAM's own assigned clients —
@@ -271,6 +355,16 @@ class App::Routes < Roda
           do_crud(Builders, r, 'RL')
         end
 
+        # Curated property groupings for the public site — see
+        # services/collections.rb. The frontend always passes `active=true`
+        # so inactive/draft collections never leak publicly; the "Featured
+        # Properties" virtual collection is never a real row here (see that
+        # service's own comment) and is synthesized client-side from
+        # Properties' `featured` column instead.
+        r.on 'collections' do
+          do_crud(Collections, r, 'RL')
+        end
+
         # Lookup tables needed to render/filter the properties list above
         # (community/area/location/type names) without an admin session —
         # same reuse-the-existing-service, Read+List-only pattern.
@@ -415,7 +509,22 @@ class App::Routes < Roda
         end
 
         r.on 'communities' do
+          # Bulk Pricing Update — see services/communities.rb#bulk_price_update.
+          # Registered before the generic do_crud catch-all so this literal
+          # path matches first, same convention as notifications' own
+          # 'mark-all-read' route. Gated on "pricing.edit" specifically
+          # rather than "communities.edit" — Pricing is its own module in
+          # the real permission taxonomy (a Finance-type role can have
+          # pricing.edit without general communities.edit).
+          r.post('bulk-price-update') { require_permission!('pricing', 'edit'); Communities[r].bulk_price_update }
           do_crud(Communities, r, 'CRUDL')
+        end
+
+        # Read-only Community price-change ledger — see
+        # services/price_histories.rb. Rows are written only from
+        # Communities#update/#bulk_price_update, never directly.
+        r.on 'price-histories' do
+          do_crud(PriceHistories, r, 'RL')
         end
 
         r.on 'properties' do
@@ -577,12 +686,28 @@ class App::Routes < Roda
         end
 
         # Media Library — metadata rows only (name/tags/uploaded_by/src as a
-        # URL string), not real file upload (no S3 wiring exists anywhere in
-        # this codebase yet, see ARCHITECTURE.md's Known gaps). Full CRUD,
-        # same as Notifications: an admin can register/edit/delete media
-        # metadata directly, not just read system-generated rows.
+        # URL string). Full CRUD, same as Notifications: an admin can
+        # register/edit/delete media metadata directly, not just read
+        # system-generated rows. `src` is now populated from a real S3
+        # upload via 'uploads/presign' below rather than a base64 data URL.
         r.on 'media-items' do
           do_crud(MediaItems, r, 'CRUDL')
+        end
+
+        # Real S3 uploads — see services/uploads.rb. One shared presign
+        # endpoint for every upload surface (property images/floor
+        # plans/documents, community gallery/documents, builder logos,
+        # media library) rather than a route per module, since each target
+        # column is just a plain string regardless of which model eventually
+        # stores it. Deliberately not permission-gated per-purpose here:
+        # presigning + uploading a file to S3 doesn't attach it to any
+        # record by itself — the actual attach happens via that record's own
+        # create/update call (e.g. Properties#update), which IS gated by
+        # do_crud above. Any authenticated admin session can obtain a
+        # presigned URL; only saving the resulting URL onto a real row is
+        # permission-checked.
+        r.on 'uploads' do
+          r.post('presign') { Uploads[r].presign }
         end
 
         # RBAC admin pages — Roles. `users` (above) already existed pre-Foundation;

@@ -67,6 +67,7 @@ class App::Services::AgentAuth < App::Services::Base
 
     agent.last_logged_in_at = Time.now
     agent.current_session_id = CurrentAgent.encoded_token(agent)
+    mark_attendance_present!(agent)
     unless agent.save
       return_errors!(agent.errors, 400)
     end
@@ -170,6 +171,20 @@ class App::Services::AgentAuth < App::Services::Base
   end
 
   private
+
+  # Auto-marks today's attendance as Present on a successful login, so the
+  # Admin Portal's Agent detail Attendance tab (AgentDetailClient.js) fills
+  # in without an admin manually logging it. Only adds a row when today has
+  # none yet — never overwrites a day an admin already marked (e.g. "Leave"
+  # for an agent who still logs in briefly), and never adds a second row for
+  # a same-day repeat login.
+  def mark_attendance_present!(agent)
+    today = Time.now.strftime('%Y-%m-%d')
+    attendance = agent.attendance || []
+    return if attendance.any? { |a| a['date'] == today }
+
+    agent.attendance = attendance + [{ 'date' => today, 'status' => 'Present' }]
+  end
 
   def token_valid?(agent)
     return false if agent.reset_sent_at.nil?

@@ -6,6 +6,11 @@ class App::Services::Collections < App::Services::Base
   # PropertyTypes#list), with name search.
   def list
     ds = model.order(:display_order, :id)
+    # Additive/opt-in — the admin management table never passes `active`
+    # (it needs both active and inactive rows for the toggle UI); the
+    # public site's read-only consumer always passes `active=true` so
+    # inactive/draft collections never leak publicly.
+    ds = ds.where(active: qs[:active].to_s == 'true') if qs.key?(:active)
     if qs[:search].present?
       ds = ds.where(Sequel.like(:name, "%#{qs[:search]}%", case_insensitive: true))
     end

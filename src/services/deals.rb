@@ -48,7 +48,8 @@ class App::Services::Deals < App::Services::Base
     {
       save: [
         :client_id, :client_name, :property_id, :property_name,
-        :agent_slug, :value, :probability, :stage, :closing_date
+        :agent_slug, :value, :probability, :stage, :closing_date,
+        :site_visit_id, :notes
       ]
     }
   end
