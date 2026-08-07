@@ -164,6 +164,12 @@ class App::Routes < Roda
             r.post { ClientSavedProperties[r].create }
             r.post('remove') { ClientSavedProperties[r].destroy }
           end
+
+          # The client's own referral code + who has signed up using it — see
+          # services/client_referrals.rb for why this reads the real
+          # Client#referred_by_id self-join instead of the separate,
+          # name-matched admin `referrals` table.
+          r.get('referrals') { ClientReferrals[r].mine }
         end
       end
 
