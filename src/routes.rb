@@ -143,6 +143,22 @@ class App::Routes < Roda
             r.get { RamPortal[r].my_clients }
           end
 
+          # Create-only: capture a brand-new contact (no portal account yet)
+          # as a real Lead — see services/ram_portal.rb#create_my_lead.
+          r.on 'leads' do
+            r.post { RamPortal[r].create_my_lead }
+          end
+
+          # The RAM's own referral-program entries — see
+          # services/ram_portal.rb#my_referrals/#create_my_referral/
+          # #update_my_referral. Status-only update; reward/payout stay
+          # admin-set via the real (admin) Referrals CRUD further down.
+          r.on 'referrals' do
+            r.get { RamPortal[r].my_referrals }
+            r.post { RamPortal[r].create_my_referral }
+            r.put(Integer) { |id| RamPortal[r, id: id].update_my_referral }
+          end
+
           # "Recommend Property" to one of the RAM's own assigned clients —
           # see services/ram_recommendations.rb. Backs the real "My
           # Recommendations" page (previously lib/data/recommendations.js's
