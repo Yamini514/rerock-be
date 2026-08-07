@@ -12,6 +12,30 @@ class App::Models::Client < Sequel::Model
   many_to_one :referred_by, class: self
   one_to_many :referrals, key: :referred_by_id, class: self
 
+  EMAIL_REGEXP = /\A[^\s@]+@[^\s@]+\.[^\s@]+\z/
+
+  # Defense-in-depth under the admin Clients form's / client-portal
+  # register/update-profile forms' own client-side checks. `assigned_ram_id`/
+  # `assigned_agent_slug` are plain nullable strings (no real FK, migrations/
+  # 0017 — RAM/Agent Network precedent), so nothing at the DB level stops a
+  # typo from silently creating an orphaned assignment; this adds a real
+  # existence check. Scoped to `new? || column_changed?(...)` so an
+  # unrelated edit to an already-existing client with a legacy bad
+  # assignment doesn't suddenly start failing.
+  def validate
+    super
+    validates_presence [:name, :email]
+    validates_format(EMAIL_REGEXP, :email, message: 'is not a valid email address') if email.present?
+    validates_unique(:email)
+    errors.add(:phone, 'must be a 10-digit phone number') if phone.present? && phone.gsub(/\D/, '').length != 10
+    if assigned_ram_id.present? && (new? || column_changed?(:assigned_ram_id)) && RamMember.where(slug: assigned_ram_id).first.nil?
+      errors.add(:assigned_ram_id, 'must match an existing RAM team member')
+    end
+    if assigned_agent_slug.present? && (new? || column_changed?(:assigned_agent_slug)) && Agent.where(slug: assigned_agent_slug).first.nil?
+      errors.add(:assigned_agent_slug, 'must match an existing agent')
+    end
+  end
+
   # Same bcrypt-over-encoded_password shape as User#password/RamMember#password
   # (models/user.rb, models/ram_member.rb) — kept as its own copy for the same
   # reason RamMember's is: separate portal, separate identity, separate JWT
