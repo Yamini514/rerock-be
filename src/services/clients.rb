@@ -6,6 +6,7 @@ class App::Services::Clients < App::Services::Base
   # page's "Referred Clients" tab, replacing the mock's referralsFor(id)).
   def list
     ds = model.order(Sequel.desc(:created_at))
+    ds = ds.where(archived: qs[:archived].to_s == 'true') if qs.key?(:archived)
     ds = ds.where(status: qs[:status]) if qs[:status].present?
     ds = ds.where(type: qs[:type]) if qs[:type].present?
     ds = ds.where(referred_by_id: qs[:referred_by_id]) if qs[:referred_by_id].present?
@@ -22,7 +23,13 @@ class App::Services::Clients < App::Services::Base
         Sequel.like(:phone, term, case_insensitive: true)
       )
     end
-    return_success(ds.all.map(&:to_pos))
+
+    if qs.key?(:page)
+      total = ds.count
+      return_success(ds.limit(limit).offset(offset).all.map(&:to_pos), meta: { total: total, page: (qs[:page] || 1).to_i, page_size: page_size })
+    else
+      return_success(ds.all.map(&:to_pos))
+    end
   end
 
   # Every admin-created client gets a working client-portal login
@@ -82,7 +89,7 @@ class App::Services::Clients < App::Services::Base
         :name, :email, :phone, :avatar, :joined, :status,
         :assigned_agent_slug, :assigned_ram_id, :type, :city,
         :referral_source, :referred_by_id,
-        :invested_properties, :notes, :communication_log, :timeline
+        :invested_properties, :notes, :communication_log, :timeline, :archived
       ]
     }
   end

@@ -6,6 +6,7 @@ class App::Services::SiteVisits < App::Services::Base
   # client name, ordered newest-first (no curated display_order here either).
   def list
     ds = model.order(Sequel.desc(:created_at))
+    ds = ds.where(archived: qs[:archived].to_s == 'true') if qs.key?(:archived)
     ds = ds.where(status: qs[:status]) if qs[:status].present?
     ds = ds.where(lead_id: qs[:lead_id]) if qs[:lead_id].present?
     ds = ds.where(property_id: qs[:property_id]) if qs[:property_id].present?
@@ -23,7 +24,13 @@ class App::Services::SiteVisits < App::Services::Base
       term = "%#{qs[:search]}%"
       ds = ds.where(Sequel.like(:client_name, term, case_insensitive: true))
     end
-    return_success(ds.all.map(&:to_pos))
+
+    if qs.key?(:page)
+      total = ds.count
+      return_success(ds.limit(limit).offset(offset).all.map(&:to_pos), meta: { total: total, page: (qs[:page] || 1).to_i, page_size: page_size })
+    else
+      return_success(ds.all.map(&:to_pos))
+    end
   end
 
   # Status transitions (Scheduled -> Completed/Cancelled/Rescheduled) and
@@ -33,7 +40,7 @@ class App::Services::SiteVisits < App::Services::Base
     {
       save: [
         :lead_id, :property_id, :community_id, :client_name, :agent_slug,
-        :date, :time, :status, :notes
+        :date, :time, :status, :notes, :archived
       ]
     }
   end

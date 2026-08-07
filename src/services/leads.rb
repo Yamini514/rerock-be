@@ -6,6 +6,7 @@ class App::Services::Leads < App::Services::Base
   # curated display_order for leads — recency is what matters here).
   def list
     ds = model.order(Sequel.desc(:created_at))
+    ds = ds.where(archived: qs[:archived].to_s == 'true') if qs.key?(:archived)
     ds = ds.where(status: qs[:status]) if qs[:status].present?
     ds = ds.where(source: qs[:source]) if qs[:source].present?
     ds = ds.where(priority: qs[:priority]) if qs[:priority].present?
@@ -25,7 +26,16 @@ class App::Services::Leads < App::Services::Base
         Sequel.like(:client_name, term, case_insensitive: true) | Sequel.like(:client_phone, term, case_insensitive: true)
       )
     end
-    return_success(ds.all.map(&:to_pos))
+
+    # Opt-in: a caller that doesn't send `page` gets the exact bare-array
+    # response every existing caller already gets — non-breaking, same
+    # contract as Properties#list.
+    if qs.key?(:page)
+      total = ds.count
+      return_success(ds.limit(limit).offset(offset).all.map(&:to_pos), meta: { total: total, page: (qs[:page] || 1).to_i, page_size: page_size })
+    else
+      return_success(ds.all.map(&:to_pos))
+    end
   end
 
   # Status transitions (what the old admin.js mock's "Convert to Lead" action
@@ -43,7 +53,7 @@ class App::Services::Leads < App::Services::Base
         :client_name, :client_phone, :client_email, :avatar,
         :property_id, :community_id, :area_id, :budget,
         :source, :priority, :status, :last_follow_up, :next_follow_up,
-        :agent_slug, :ram_id, :timeline
+        :agent_slug, :ram_id, :timeline, :archived
       ]
     }
   end

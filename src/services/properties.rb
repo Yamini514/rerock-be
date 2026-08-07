@@ -20,7 +20,18 @@ class App::Services::Properties < App::Services::Base
     if qs[:search].present?
       ds = ds.where(Sequel.like(:title, "%#{qs[:search]}%", case_insensitive: true))
     end
-    return_success(ds.all.map(&:to_pos))
+
+    # Opt-in: a caller that doesn't send `page` gets the exact bare-array
+    # response it always has (every existing admin/public caller) — fully
+    # non-breaking. `offset`/`limit`/`page_size` already exist on Base
+    # (previously unused here) — this table is the one most likely to
+    # outgrow an unpaginated `.all` as the catalog grows.
+    if qs.key?(:page)
+      total = ds.count
+      return_success(ds.limit(limit).offset(offset).all.map(&:to_pos), meta: { total: total, page: (qs[:page] || 1).to_i, page_size: page_size })
+    else
+      return_success(ds.all.map(&:to_pos))
+    end
   end
 
   # Archive/restore (archiveProperty/restoreProperty), the featured toggle

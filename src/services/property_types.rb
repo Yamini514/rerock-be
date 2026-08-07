@@ -11,7 +11,14 @@ class App::Services::PropertyTypes < App::Services::Base
     if qs[:search].present?
       ds = ds.where(Sequel.like(:name, "%#{qs[:search]}%", case_insensitive: true))
     end
-    return_success(ds.all.map(&:to_pos))
+
+    counts, avg_prices = property_stats_by_type
+    return_success(ds.all.map { |t|
+      t.to_pos.merge(
+        'listings_count' => counts[t.id] || 0,
+        'avg_price' => avg_prices[t.id] ? avg_prices[t.id].to_i : 0
+      )
+    })
   end
 
   # lib/data/propertyTypes.js's addPropertyType defaults displayOrder to
@@ -28,12 +35,31 @@ class App::Services::PropertyTypes < App::Services::Base
   # frontend's point of view, so they ride the standard PUT/update below —
   # `archived` and `display_order` are just whitelisted like any other
   # saveable field, same pattern as Builders.
+  # `icon`/`colour` are intentionally no longer whitelisted — the taxonomy
+  # was simplified to drop styling in favor of Name/Description/Display
+  # Order/Active/Allow Search/Homepage Visibility/SEO only (the admin form
+  # no longer sends either field). Columns are left in place for now rather
+  # than dropped in the same change — see the trailing migration once
+  # confirmed nothing else still reads them.
   def self.fields
     {
       save: [
-        :slug, :name, :description, :icon, :banner, :image, :display_order,
-        :colour, :active, :show_on_homepage, :allow_search, :seo, :archived
+        :slug, :name, :description, :banner, :image, :display_order,
+        :active, :show_on_homepage, :allow_search, :seo, :archived
       ]
     }
+  end
+
+  private
+
+  # Replaces the frontend's old lib/data/propertyTypes.js `propertyTypeStats`
+  # mock (stale, hand-authored numbers) with real aggregates over the live
+  # `properties` table — archived properties are excluded, matching the
+  # admin dashboard's own `activeProperties` convention (AdminClient.js).
+  def property_stats_by_type
+    active = Property.where(archived: false)
+    counts = active.group_and_count(:property_type_id).as_hash(:property_type_id, :count)
+    avg_prices = active.exclude(price: nil).group(:property_type_id).select_hash(:property_type_id, Sequel.function(:avg, :price).as(:avg_price))
+    [counts, avg_prices]
   end
 end
