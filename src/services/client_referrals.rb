@@ -29,6 +29,7 @@ class App::Services::ClientReferrals < App::Services::Base
   # convention as services/public_agents.rb/public_ram.rb).
   def referral_brief(referred_client)
     {
+      'id' => referred_client.id,
       'name' => referred_client.name,
       'joined' => referred_client.created_at,
       'status' => referred_client.status
