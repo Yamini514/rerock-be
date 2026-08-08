@@ -10,4 +10,12 @@ class App::Models::FollowUp < Sequel::Model
     super
     validates_presence [:client_name, :due_date]
   end
+
+  # Real, computed live from due_date vs today rather than a stored column.
+  # Was private to services/follow_ups.rb#list; moved here so
+  # services/agent_portal.rb#my_follow_ups (the agent-scoped read) can
+  # compute the exact same "overdue" flag instead of duplicating the logic.
+  def with_overdue
+    to_pos.merge('overdue' => !done && !due_date.nil? && due_date < Date.today)
+  end
 end

@@ -162,6 +162,37 @@ class App::Services::AgentPortal < App::Services::Base
     save(visit) { |o| o.ensure_deal_for_completion!; return_success(o.to_pos) }
   end
 
+  # Follow Ups (backend/src/services/follow_ups.rb) is a real `agent_id`
+  # FK — unlike Deals/Leads/SiteVisits/Clients above, which are all scoped
+  # by the deferred `agent_slug` string. Same "not-done first, soonest due
+  # date first" order as the admin list, and the same live-computed
+  # `overdue` flag (FollowUp#with_overdue) rather than a stored column.
+  def my_follow_ups
+    agent = current_agent
+    return_errors!("Not signed in.", 401) if agent.nil?
+
+    rows = FollowUp.where(agent_id: agent.id, archived: false).order(Sequel.asc(:done), Sequel.asc(:due_date)).all
+    return_success(rows.map(&:with_overdue))
+  end
+
+  # An agent can mark their own follow-up done, add notes, or nudge its
+  # date/type/priority — not reassign who it's for/about (client_name,
+  # lead_id, property_id, agent_id all stay admin-only via /admin/follow-ups,
+  # same "no reassigning your own book of business" reasoning as
+  # update_my_deal/update_my_lead/update_my_site_visit above).
+  def update_my_follow_up
+    agent = current_agent
+    return_errors!("Not signed in.", 401) if agent.nil?
+
+    follow_up = FollowUp[rp[:id]]
+    return_errors!("Follow-up not found.", 404) if follow_up.nil?
+    return_errors!("This follow-up isn't assigned to you.", 403) unless follow_up.agent_id == agent.id
+
+    allowed = params.slice(:due_date, :type, :priority, :done, :notes)
+    follow_up.set_fields(allowed, allowed.keys)
+    save(follow_up) { |o| return_success(o.with_overdue) }
+  end
+
   # Read-only: an agent can see their own assigned clients' CRM record, but
   # editing the client relationship itself (notes/communication_log/
   # invested_properties/reassignment) stays an admin/advisor action via

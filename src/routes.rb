@@ -307,6 +307,14 @@ class App::Routes < Roda
             r.get { AgentPortal[r].my_clients }
           end
 
+          # Admin-assigned Follow Ups scoped to this agent (real agent_id
+          # FK, unlike deals/leads/site-visits' agent_slug above) — see
+          # services/agent_portal.rb#my_follow_ups/#update_my_follow_up.
+          r.on 'follow-ups' do
+            r.get { AgentPortal[r].my_follow_ups }
+            r.put(Integer) { |id| AgentPortal[r, id: id].update_my_follow_up }
+          end
+
           # Admin-broadcast notifications targeted at audience "agent" —
           # see services/agent_notifications.rb. Read state is per-agent
           # (notification_reads join table), not a shared column.
