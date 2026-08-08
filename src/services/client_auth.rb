@@ -38,7 +38,7 @@ class App::Services::ClientAuth < App::Services::Base
     return_errors!("Name can only contain letters, spaces, apostrophes and hyphens.", 400) unless name.match?(NAME_REGEXP)
     return_errors!("Enter a valid 10-digit mobile number.", 400) unless phone.match?(PHONE_REGEXP)
     return_errors!("Password must be at least 8 characters.", 400) if password.length < 8
-    return_errors!("An account with this email already exists.", 400) if Client.where(email: email).first
+    return_errors!("An account with this email already exists.", 409) if Client.where(email: email).first
 
     referrer = params[:referral_code].present? ? Client.where(referral_code: params[:referral_code].strip).first : nil
 
