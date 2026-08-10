@@ -48,7 +48,24 @@ class App::Services::RamAuth < App::Services::Base
       profile_extra: { phone: phone, referralCode: params[:referral_code] }.compact
     )
     ram.password = password
-    save(ram) { |o| return_success(o.as_pos) }
+    save(ram) do |o|
+      Notification.create(
+        audience: "ram",
+        recipient_id: o.id,
+        type: "welcome",
+        icon: "PartyPopper",
+        title: "Welcome to REROCK Realty",
+        message: "Your RAM account has been created. Your RAM ID is #{o.slug}."
+      )
+      Notification.create(
+        audience: "admin",
+        type: "ram",
+        icon: "UserPlus",
+        title: "New RAM registration",
+        message: "#{o.name} registered and is awaiting approval."
+      )
+      return_success(o.as_pos)
+    end
   end
 
   def login
@@ -111,7 +128,17 @@ class App::Services::RamAuth < App::Services::Base
     end
 
     ram.set_fields(allowed, allowed.keys)
-    save(ram) { |o| return_success(o.as_pos) }
+    save(ram) do |o|
+      Notification.create(
+        audience: "ram",
+        recipient_id: o.id,
+        type: "profile",
+        icon: "UserCog",
+        title: "Profile updated",
+        message: "Your personal information has been updated successfully."
+      )
+      return_success(o.as_pos)
+    end
   end
 
   def update_password

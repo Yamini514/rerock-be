@@ -44,7 +44,16 @@ class App::Services::AgentAuth < App::Services::Base
       status: "Pending"
     )
     agent.password = password
-    save(agent) { |o| return_success(o.as_pos) }
+    save(agent) do |o|
+      Notification.create(
+        audience: "admin",
+        type: "agent",
+        icon: "UserPlus",
+        title: "New agent registration",
+        message: "#{o.name} registered and is awaiting approval."
+      )
+      return_success(o.as_pos)
+    end
   end
 
   # No OTP/2FA step: a correct password logs an agent straight in, same as

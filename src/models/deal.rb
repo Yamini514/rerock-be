@@ -23,7 +23,8 @@ class App::Models::Deal < Sequel::Model
     ref = referral
     return if ref.nil? || ref.ram_id.blank?
 
-    rate = DEFAULT_COMMISSION_RATE_PCT
+    ram = App::Models::RamMember.where(slug: ref.ram_id).first
+    rate = ram&.default_commission_rate.presence || DEFAULT_COMMISSION_RATE_PCT
     amount = (value.to_i * rate / 100.0).round
 
     commission = App::Models::Commission.create(

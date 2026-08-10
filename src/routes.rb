@@ -494,6 +494,17 @@ class App::Routes < Roda
           r.post { PublicSiteVisits[r].create }
         end
 
+        # Public Careers application submission — see
+        # services/public_job_applications.rb.
+        r.on 'job-applications' do
+          r.post { PublicJobApplications[r].create }
+        end
+
+        # Public Newsletter subscription — see services/public_newsletter.rb.
+        r.on 'newsletter' do
+          r.post { PublicNewsletter[r].create }
+        end
+
         # RAM referral-link click — see services/public_referral_links.rb.
         # POST (not GET) since it has a real side effect (increments
         # clicks_count), same "side-effecting action gets its own POST"
@@ -711,6 +722,17 @@ class App::Routes < Roda
 
         r.on 'career-benefits' do
           do_crud(CareerBenefits, r, 'CRUDL')
+        end
+
+        # Candidate applications against the roles above — read/update
+        # (status)/delete/list only, never admin-create (see
+        # services/job_applications.rb's own comment).
+        r.on 'job-applications' do
+          do_crud(JobApplications, r, 'RUDL')
+        end
+
+        r.on 'newsletter-subscribers' do
+          do_crud(NewsletterSubscribers, r, 'RUDL')
         end
 
         r.on 'seo-pages' do

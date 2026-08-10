@@ -56,6 +56,13 @@ class App::Services::ClientAuth < App::Services::Base
 
     save(client) do |o|
       o.generate_and_send_otp!
+      Notification.create(
+        audience: "admin",
+        type: "client",
+        icon: "UserPlus",
+        title: "New client registration",
+        message: "#{o.name} created a client portal account."
+      )
       return_success(email: o.email)
     end
   end

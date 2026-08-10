@@ -47,22 +47,29 @@ class App::Services::RamMembers < App::Services::Base
 
   # Status changes (Active/Pending/Inactive, including the "Approve" row
   # action), profile edits, and every jsonb array (recommendations, reports,
-  # performance, activities, documents) all ride the standard PUT/update
-  # below, whitelisted like any other saveable column — frontend sends each
-  # array back whole, already-appended, same convention as Agent#tasks/
+  # activities, documents) all ride the standard PUT/update below,
+  # whitelisted like any other saveable column — frontend sends each array
+  # back whole, already-appended, same convention as Agent#tasks/
   # #activity_log. `profile_extra` (contact/professional/bank/KYC, including
   # `phone`) was previously write-only from the RAM's own self-service portal
   # (RamAuth#update_profile) — added here so the RAM Details page's admin
   # Edit drawer can set/update it too (e.g. for admin-provisioned accounts
   # that never went through self-registration's own phone-collecting form).
+  #
+  # The old free-entry "Performance Metrics" fields (deals_this_quarter,
+  # satisfaction, renewal_rate, avg_response_time_hours, experience_years,
+  # revenue_managed, conversion_rate_pct, referral_generated, performance)
+  # are intentionally no longer admin-writable here — they were never real
+  # referral-derived numbers (see #stats below for the real equivalent) and
+  # the RAM Portal spec wants them replaced entirely by one real setting:
+  # `default_commission_rate`, the % Deal#ensure_commission_for_closure!
+  # applies to this RAM's future closed deals.
   def self.fields
     {
       save: [
         :slug, :name, :email, :avatar, :designation, :builder_ids, :region,
-        :deals_this_quarter, :status, :satisfaction, :renewal_rate,
-        :avg_response_time_hours, :experience_years, :revenue_managed,
-        :conversion_rate_pct, :referral_generated, :profile_extra,
-        :recommendations, :reports, :performance, :activities, :documents
+        :status, :default_commission_rate, :profile_extra,
+        :recommendations, :reports, :activities, :documents
       ]
     }
   end

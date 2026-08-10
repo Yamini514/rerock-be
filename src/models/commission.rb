@@ -48,7 +48,7 @@ class App::Models::Commission < Sequel::Model
       'ELIGIBLE' => ['Commission eligible', "Your commission of #{format_inr(commission_amount)} is now eligible for payout."],
       'APPROVED' => ['Commission approved', "Your commission of #{format_inr(commission_amount)} has been approved."],
       'PROCESSING' => ['Commission processing', "Your commission of #{format_inr(commission_amount)} is being processed for payment."],
-      'PAID' => ['Commission paid', "Your commission of #{format_inr(commission_amount)} has been paid out."],
+      'PAID' => ['Commission Received', "You earned #{format_inr(commission_amount)} commission on the successful purchase of #{referral&.property&.title || 'a referred property'}."],
       'REJECTED' => ['Commission rejected', "Your commission for this referral was rejected. Contact an admin for details."],
       'CANCELLED' => ['Commission cancelled', "Your commission for this referral was cancelled."],
     }[status]

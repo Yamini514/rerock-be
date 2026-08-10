@@ -11,7 +11,7 @@ class App::Services::RamNotifications < App::Services::Base
     ram = CurrentRam.ram_obj
     return_errors!("Not signed in.", 401) if ram.nil?
 
-    return_success(notifications_with_read_state(ram.id))
+    return_success(notifications_with_read_state(ram))
   end
 
   # Toggles read/unread (matches components/portal/NotificationItem's
@@ -21,36 +21,45 @@ class App::Services::RamNotifications < App::Services::Base
     ram = CurrentRam.ram_obj
     return_errors!("Not signed in.", 401) if ram.nil?
 
-    notification = visible_scope(ram.id).where(id: rp[:id]).first
+    notification = visible_scope(ram).where(id: rp[:id]).first
     return_errors!("Notification not found.", 404) if notification.nil?
 
     existing = NotificationRead.where(notification_id: notification.id, recipient_type: "ram", recipient_id: ram.id).first
     existing ? existing.delete : NotificationRead.create(notification_id: notification.id, recipient_type: "ram", recipient_id: ram.id)
-    return_success(notifications_with_read_state(ram.id))
+    return_success(notifications_with_read_state(ram))
   end
 
   def mark_all_read
     ram = CurrentRam.ram_obj
     return_errors!("Not signed in.", 401) if ram.nil?
 
-    ids = visible_scope(ram.id).select_map(:id)
+    ids = visible_scope(ram).select_map(:id)
     already_read = NotificationRead.where(recipient_type: "ram", recipient_id: ram.id, notification_id: ids).select_map(:notification_id)
     (ids - already_read).each { |nid| NotificationRead.create(notification_id: nid, recipient_type: "ram", recipient_id: ram.id) }
 
-    return_success(notifications_with_read_state(ram.id))
+    return_success(notifications_with_read_state(ram))
   end
 
   private
 
-  # Broadcasts (recipient_id nil) plus anything targeted at this one RAM
-  # member specifically — never another RAM member's personal notification.
-  def visible_scope(ram_id)
-    Notification.where(audience: "ram").where(Sequel.|({ recipient_id: nil }, { recipient_id: ram_id }))
+  # Broadcasts (recipient_id nil) are only visible if sent on/after this RAM's
+  # own join date — a RAM shouldn't see admin announcements that predate
+  # their account (spec: "before register/login broadcast notifications no
+  # need to show"). Anything targeted at this one RAM member specifically
+  # (recipient_id == ram.id) stays visible regardless of date — never
+  # another RAM member's personal notification.
+  def visible_scope(ram)
+    Notification.where(audience: "ram").where(
+      Sequel.|(
+        Sequel.&({ recipient_id: nil }, Sequel.lit('created_at >= ?', ram.created_at)),
+        { recipient_id: ram.id }
+      )
+    )
   end
 
-  def notifications_with_read_state(ram_id)
-    read_ids = NotificationRead.where(recipient_type: "ram", recipient_id: ram_id).select_map(:notification_id)
-    visible_scope(ram_id).order(Sequel.desc(:created_at), Sequel.desc(:id)).all.map do |n|
+  def notifications_with_read_state(ram)
+    read_ids = NotificationRead.where(recipient_type: "ram", recipient_id: ram.id).select_map(:notification_id)
+    visible_scope(ram).order(Sequel.desc(:created_at), Sequel.desc(:id)).all.map do |n|
       n.to_pos.merge("read" => read_ids.include?(n.id))
     end
   end

@@ -14,12 +14,21 @@ class App::Services::ReferralLinks < App::Services::Base
     return_success(ReferralLink.where(ram_id: ram.slug).order(Sequel.desc(:created_at)).all.map(&:to_pos))
   end
 
+  # Idempotent by (ram, property): the RAM Portal's "Recommend / Share
+  # Property" action calls this every time the share sheet opens, so an
+  # already-active link for the same property (or the same general link,
+  # when property_id is blank) is returned as-is rather than spawning a
+  # fresh code — same "find or create" reasoning as the referral-link's own
+  # click-tracking existing for exactly one durable, shareable URL per pair.
   def create
     ram = CurrentRam.ram_obj
     return_errors!("Not signed in.", 401) if ram.nil?
 
     property_id = params[:property_id].presence
     return_errors!("Property not found.", 404) if property_id.present? && Property[property_id].nil?
+
+    existing = ReferralLink.where(ram_id: ram.slug, property_id: property_id, active: true).first
+    return return_success(existing.to_pos) if existing
 
     link = ReferralLink.new(
       ram_id: ram.slug,
