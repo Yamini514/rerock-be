@@ -120,6 +120,7 @@ class App::Services::RamAuth < App::Services::Base
 
     if ram.password == params[:current_password]
       ram.password = params[:new_password]
+      ram.must_change_password = false
       save(ram) { return_success("Password updated successfully.") }
     else
       return_errors!("Invalid current password.")
@@ -161,6 +162,7 @@ class App::Services::RamAuth < App::Services::Base
       ram.password = new_password
       ram.reset_token = nil
       ram.reset_sent_at = nil
+      ram.must_change_password = false
       save(ram) { return_success('Password has been reset.') }
     else
       return_errors!('Invalid or expired token.', 400)

@@ -43,6 +43,7 @@ class App::Routes < Roda
     'FollowUps' => 'crm',
     'SiteVisits' => 'crm',
     'Referrals' => 'crm',
+    'Commissions' => 'crm',
   }.freeze
 
   ACTION_FLAGS = { 'C' => 'create', 'R' => 'view', 'L' => 'view', 'U' => 'edit', 'D' => 'delete' }.freeze
@@ -157,6 +158,27 @@ class App::Routes < Roda
             r.get { RamPortal[r].my_referrals }
             r.post { RamPortal[r].create_my_referral }
             r.put(Integer) { |id| RamPortal[r, id: id].update_my_referral }
+          end
+
+          # Referral-link generator (general or property-specific) — see
+          # services/referral_links.rb. Deactivate-only (no hard delete, no
+          # edit): a shared link's identity/code never changes once handed
+          # out, it's just toggled off.
+          r.on 'referral-links' do
+            r.get { ReferralLinks[r].mine }
+            r.post { ReferralLinks[r].create }
+            r.on(Integer) do |id|
+              r.post('deactivate') { ReferralLinks[r, id: id].deactivate }
+            end
+          end
+
+          # Read-only — the RAM's own commissions (services/commissions.rb
+          # is the real, admin-only CRUD that can actually change status/
+          # amount; this just re-exposes a ram_id-scoped slice of it, same
+          # "reuse the admin table filtered to the authenticated identity"
+          # convention as my_referrals/my_clients above).
+          r.on 'commissions' do
+            r.get { RamPortal[r].my_commissions }
           end
 
           # "Recommend Property" to one of the RAM's own assigned clients —
@@ -471,6 +493,16 @@ class App::Routes < Roda
         r.on 'site-visits' do
           r.post { PublicSiteVisits[r].create }
         end
+
+        # RAM referral-link click — see services/public_referral_links.rb.
+        # POST (not GET) since it has a real side effect (increments
+        # clicks_count), same "side-effecting action gets its own POST"
+        # convention as notifications' 'mark-all-read' elsewhere in this file.
+        r.on 'ref' do
+          r.on(String) do |code|
+            r.post('click') { PublicReferralLinks[r, code: code].click }
+          end
+        end
       end
 
       # Authentication required for all routes below
@@ -555,6 +587,18 @@ class App::Routes < Roda
           do_crud(Referrals, r, 'CRUDL')
         end
 
+        # Auto-created (Deal#ensure_commission_for_closure!) once a deal tied
+        # to a referral closes; admin controls the entire lifecycle past that
+        # (approve/reject/process/mark paid, rate/amount corrections) via the
+        # standard PUT/update below — see services/commissions.rb and
+        # models/commission.rb's ALLOWED_TRANSITIONS state machine. Create
+        # stays wired (not 'RL'-only like Activity/Audit Logs) for the rare
+        # manual backfill case (a deal that closed before this feature
+        # existed), same reasoning as Notifications' own full CRUD.
+        r.on 'commissions' do
+          do_crud(Commissions, r, 'CRUDL')
+        end
+
         r.on 'clients' do
           do_crud(Clients, r, 'CRUDL')
         end
@@ -571,7 +615,35 @@ class App::Routes < Roda
         # ram_members (avoiding an awkward bare `ram` SQL identifier), but the
         # URL path stays 'ram' to match the frontend's existing /admin/ram route.
         r.on 'ram' do
-          do_crud(RamMembers, r, 'CRUDL')
+          # RAM Details page's own sub-resources, PLUS the plain show/update/
+          # delete, all have to live inside this ONE r.on(Integer) block.
+          # Roda's r.on *commits* once it matches a path segment — even if
+          # nothing inside the block matches further, the request halts right
+          # there instead of falling through to sibling code (do_crud below
+          # would never see its own r.get(Integer)/r.put(Integer)/
+          # r.delete(Integer) for a bare /ram/:id). So show/update/delete are
+          # inlined here instead of left to do_crud, which is now only asked
+          # for 'C'reate and 'L'ist (no id segment, unaffected by this).
+          r.on(Integer) do |ram_id|
+            r.get('stats') { RamMembers[r, id: ram_id].stats }
+            r.post('reset-password') { RamMembers[r, id: ram_id].reset_password }
+
+            # Admin-logged "Recommend Property" entries for this RAM's
+            # referred clients — see services/ram_member_recommendations.rb.
+            # Create validates the given referral_id both exists and
+            # actually belongs to this ram_id server-side; never trusts a
+            # client_id/ram ownership claim from the request body.
+            r.on 'recommendations' do
+              r.post { RamMemberRecommendations[r, ram_id: ram_id].create }
+              r.get { RamMemberRecommendations[r, ram_id: ram_id].list }
+            end
+
+            r.get { RamMembers[r, id: ram_id].get }
+            r.put { RamMembers[r, id: ram_id].update }
+            r.delete { RamMembers[r, id: ram_id].delete }
+          end
+
+          do_crud(RamMembers, r, 'CL')
         end
 
         r.on 'portfolio-members' do

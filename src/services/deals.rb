@@ -27,7 +27,11 @@ class App::Services::Deals < App::Services::Base
   # name when a client_id/property_id is given but the fallback string isn't
   # explicitly passed — same "derive the denormalized string from the real
   # FK's own record" pattern as Locations#create defaulting `city` from the
-  # parent Area.
+  # parent Area. referral_id similarly auto-resolves when a deal is created
+  # directly (not via SiteVisit#ensure_deal_for_completion!, which already
+  # resolves it from the visit's own lead_id) against an existing Referral
+  # for the same client — an admin can still pass an explicit referral_id
+  # to override this guess.
   def create
     data = data_for(:save)
     if data[:client_name].blank? && data[:client_id].present?
@@ -38,17 +42,32 @@ class App::Services::Deals < App::Services::Base
       property = Property[data[:property_id]]
       data[:property_name] = property.title if property
     end
+    if data[:referral_id].blank? && data[:client_id].present?
+      referral = Referral.where(client_id: data[:client_id]).exclude(status: ["Purchase Completed", "Cancelled"]).first
+      data[:referral_id] = referral.id if referral
+    end
     save(model.new(data))
   end
 
   # Stage moves (the Kanban board's inline stage Select) and probability/
-  # value/closing-date edits all ride the standard PUT/update below — every
-  # field just whitelisted like any other saveable column.
+  # value/closing-date edits all ride the standard PUT/update below —
+  # overridden only to run Deal#ensure_commission_for_closure! after a
+  # successful save, same "call unconditionally, guard idempotently"
+  # convention as SiteVisits#update's own ensure_deal_for_completion! call.
+  def update(data = nil)
+    data ||= data_for(:save)
+    item.set_fields(data, data.keys)
+    save(item) do |o|
+      o.ensure_commission_for_closure!
+      return_success(o.to_pos)
+    end
+  end
+
   def self.fields
     {
       save: [
         :client_id, :client_name, :property_id, :property_name,
-        :agent_slug, :value, :probability, :stage, :closing_date,
+        :agent_slug, :referral_id, :value, :probability, :stage, :closing_date,
         :site_visit_id, :notes
       ]
     }

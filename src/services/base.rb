@@ -200,6 +200,96 @@ class App::Services::Base
     App.cu.user_obj.client_id
   end
 
+  # Creates a Lead + Referral together in one transaction, with duplicate
+  # detection and automatic Property -> Agent carry-over — the shared core
+  # behind every entry point that turns a referred prospect into real CRM
+  # rows: RamPortal#create_my_referral (an authenticated RAM's own manual
+  # referral) and PublicContact#create/PublicSiteVisits#create (an anonymous
+  # visitor converting through a RAM's shared referral link — see
+  # services/public_referral_links.rb). Halts via return_errors! (400/409)
+  # on failure, same as any other guard-clause-heavy service method — a
+  # caller past this line can assume both records were created.
+  #
+  # BUSINESS DECISION (undocumented anywhere else in this codebase, so
+  # recorded here): duplicate detection matches phone/email against
+  # existing Clients. If a match exists AND that Client already has an
+  # active referral (any status other than "Purchase Completed"/
+  # "Cancelled", not archived), this 409s instead of creating a second one —
+  # "first accepted referral owns the customer." A match with no active
+  # referral links the new Lead/Referral to that real Client instead of
+  # creating a duplicate contact.
+  def create_referral_with_lead!(name:, phone:, email:, property_id:, ram_id:, referrer_name:, type:, source:, referral_link_id: nil)
+    return_errors!("Referred person's name is required.", 400) if name.blank?
+    return_errors!("Referred person's phone number is required.", 400) if phone.blank?
+
+    existing_client = Client.where(phone: phone).first
+    existing_client ||= Client.where(email: email).first if email.present?
+
+    if existing_client
+      active_referral = Referral.where(client_id: existing_client.id, archived: false)
+                                 .exclude(status: ["Purchase Completed", "Cancelled"]).first
+      return_errors!("This customer already has an active referral.", 409) if active_referral
+    end
+
+    # If the property already has an assigned Agent, automatically carry
+    # that assignment onto the new Lead/Referral — never invented, never
+    # left for an admin to notice on their own. If the property has no
+    # agent yet, agent_slug stays nil; callers surface that in their own
+    # admin notification copy.
+    property = property_id.present? ? Property[property_id] : nil
+    agent_slug = property&.agent_slug
+
+    validation_errors = nil
+    lead = nil
+    referral = nil
+
+    App.db.transaction do
+      lead = Lead.new(
+        client_name: name,
+        client_phone: phone,
+        client_email: email,
+        property_id: property_id,
+        client_id: existing_client&.id,
+        source: source,
+        ram_id: ram_id,
+        agent_slug: agent_slug,
+        status: "New"
+      )
+      unless lead.valid?
+        validation_errors = lead.errors
+        raise Sequel::Rollback
+      end
+      lead.save(validate: false)
+
+      referral = Referral.new(
+        ram_id: ram_id,
+        type: type,
+        referrer: referrer_name,
+        referred: name,
+        client_id: existing_client&.id,
+        property_id: property_id,
+        lead_id: lead.id,
+        agent_slug: agent_slug,
+        referral_link_id: referral_link_id,
+        status: "Enquiry Stage",
+        reward: 0,
+        date: Date.today
+      )
+      unless referral.valid?
+        validation_errors = referral.errors
+        raise Sequel::Rollback
+      end
+      referral.save(validate: false)
+    end
+
+    return_errors!(validation_errors, 400) if validation_errors
+
+    write_audit_log!(lead, true)
+    write_audit_log!(referral, true)
+
+    [lead, referral, property, agent_slug]
+  end
+
   def to_est(time)
     # "Eastern Time (US & Canada)" is the Rails time zone name for EST/EDT.
     time.in_time_zone("Eastern Time (US & Canada)")
@@ -321,8 +411,19 @@ class App::Services::Base
     )
   end
 
+  # Admin (App.cu) is checked first since that's who's signed in for the
+  # overwhelming majority of Base#save callers (every do_crud'd admin
+  # resource). RAM/Agent/Client Portal actions ride these same Base#save/
+  # #delete hooks too (e.g. RamPortal#create_my_referral), but App.cu is
+  # always nil there — without this fallback chain those audit rows
+  # silently misattributed every RAM/Agent/Client-originated change to
+  # 'System', losing the real actor's identity.
   def audit_changed_by
-    App.cu.user_obj&.full_name || 'System'
+    App.cu.user_obj&.full_name ||
+      App::Helpers::CurrentRam.ram_obj&.name ||
+      App::Helpers::CurrentAgent.agent_obj&.name ||
+      App::Helpers::CurrentClient.client_obj&.name ||
+      'System'
   end
 
   # Prefers the device id captured in Before's thread-local request space

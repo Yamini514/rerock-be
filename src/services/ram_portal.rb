@@ -76,33 +76,43 @@ class App::Services::RamPortal < App::Services::Base
   # "Refer a Client" — the RAM personally sourcing a new prospect into the
   # business (as opposed to an existing client/agent referring someone,
   # which stays an admin-entered "Client Referral"/"Agent Referral" row).
-  # Companion to create_my_lead: the frontend calls both so the contact's
-  # phone/email/property-interest land on a real Lead while this row tracks
-  # them through the referral-program funnel using the same
-  # Enquiry Stage -> Site Visit Scheduled -> Purchase Completed vocabulary
-  # as the admin CRM (lib/data/referrals.js's REFERRAL_STATUSES) — not the
-  # old RAM-only mock's unrelated Pending/Qualified/Converted/Lost.
+  # The actual Lead+Referral creation (dedup, transaction, agent carry-over)
+  # is the shared Base#create_referral_with_lead! — also used by
+  # PublicContact/PublicSiteVisits when a visitor converts through this
+  # RAM's own shared referral link instead of a direct manual entry here.
   def create_my_referral
     ram = current_ram
     return_errors!("Not signed in.", 401) if ram.nil?
-    return_errors!("Referred person's name is required.", 400) if params[:referred].blank?
+    return_errors!("Referred person's email address is required.", 400) if params[:client_email].blank?
 
-    referral = Referral.new(
+    lead, referral, property, agent_slug = create_referral_with_lead!(
+      name: params[:referred]&.strip,
+      phone: params[:client_phone]&.strip,
+      email: params[:client_email]&.strip&.downcase,
+      property_id: params[:property_id].presence,
       ram_id: ram.slug,
+      referrer_name: ram.name,
       type: "RAM Referral",
-      referrer: ram.name,
-      referred: params[:referred]&.strip,
-      status: "Enquiry Stage",
-      reward: 0,
-      date: Date.today
+      source: "RAM Referral"
     )
 
-    save(referral) { |o| return_success(o.to_pos) }
+    agent_note = property.present? && agent_slug.blank? ? " No agent is assigned to this property yet — assignment required." : ""
+    Notification.create(
+      audience: "admin",
+      type: "referral",
+      icon: "Gift",
+      title: "New referral",
+      message: "#{ram.name} referred a new prospect: #{referral.referred}.#{agent_note}"
+    )
+
+    return_success(referral.to_pos.merge(lead: lead.to_pos))
   end
 
   # Status transitions only (Enquiry Stage -> Site Visit Scheduled ->
-  # Purchase Completed) — same "the portal can move its own record through
-  # the funnel, but never touch reward/payout" reasoning as create above.
+  # Purchase Completed/Cancelled) — same "the portal can move its own
+  # record through the funnel, but never touch reward/payout" reasoning as
+  # create above. notify_ram_of_status! is a no-op unless the new status is
+  # one the RAM would want a nudge about (see models/referral.rb).
   def update_my_referral
     ram = current_ram
     return_errors!("Not signed in.", 401) if ram.nil?
@@ -113,6 +123,19 @@ class App::Services::RamPortal < App::Services::Base
 
     allowed = params.slice(:status)
     referral.set_fields(allowed, allowed.keys)
-    save(referral) { |o| return_success(o.to_pos) }
+    save(referral) do |o|
+      o.notify_ram_of_status!
+      return_success(o.to_pos)
+    end
+  end
+
+  # Read-only — reward/payout/status transitions all stay admin-only via
+  # services/commissions.rb; this just re-exposes the RAM's own slice of
+  # that real table, same convention as my_referrals/my_clients above.
+  def my_commissions
+    ram = current_ram
+    return_errors!("Not signed in.", 401) if ram.nil?
+
+    return_success(Commission.where(ram_id: ram.slug).order(Sequel.desc(:created_at)).all.map(&:to_pos))
   end
 end

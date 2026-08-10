@@ -64,6 +64,40 @@ class App::Models::RamMember < Sequel::Model
     mail.deliver!
   end
 
+  # Admin-provisioned account's first password (services/ram_members.rb's
+  # new admin-invite path) — same `mail` gem/SMTP infra and "email it
+  # instead of showing it in the admin UI" reasoning as
+  # Client#send_temporary_password_email (models/client.rb). The RAM changes
+  # it afterward via the portal's own existing self-service Update Password
+  # flow (RamAuth#update_password), which also clears `must_change_password`.
+  def send_temporary_password_email(temp_password)
+    ram_email = self.email
+    ram_name = self.name
+
+    mail = Mail.new do
+      from    'apps@srinishtha.com'
+      to      ram_email
+      subject 'Your REROCK Realty RAM Portal login'
+      html_part do
+        content_type 'text/html; charset=UTF-8'
+        body <<-HTML
+          <html>
+          <body>
+            <h1>Welcome to REROCK Realty</h1>
+            <p>Hello #{ram_name},</p>
+            <p>An account has been created for you on the REROCK Realty RAM Portal. Here is your temporary password:</p>
+            <p style="font-size: 22px; font-weight: bold; letter-spacing: 2px;">#{temp_password}</p>
+            <p>Please log in and change your password from your profile settings as soon as possible.</p>
+            <p>Thank you,<br/>REROCK Realty</p>
+          </body>
+          </html>
+        HTML
+      end
+    end
+
+    mail.deliver!
+  end
+
   # Shaped to match the RAM Portal's existing camelCase field names (the
   # mock it's replacing — lib/data/staff.js's ramTeam[] — predates this
   # build and every portal page/component was written against that exact
@@ -96,6 +130,7 @@ class App::Models::RamMember < Sequel::Model
       'activities' => activities,
       'documents' => documents,
       'profileExtra' => profile_extra || {},
+      'mustChangePassword' => must_change_password,
       'lastLoggedInAt' => last_logged_in_at,
       'createdAt' => created_at,
     }

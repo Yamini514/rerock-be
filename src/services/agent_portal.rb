@@ -42,7 +42,10 @@ class App::Services::AgentPortal < App::Services::Base
 
     allowed = params.slice(:stage, :probability, :value, :closing_date, :notes)
     deal.set_fields(allowed, allowed.keys)
-    save(deal) { |o| return_success(o.to_pos) }
+    save(deal) do |o|
+      o.ensure_commission_for_closure!
+      return_success(o.to_pos)
+    end
   end
 
   def my_leads

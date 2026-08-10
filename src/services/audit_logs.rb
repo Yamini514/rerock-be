@@ -18,6 +18,28 @@ class App::Services::AuditLogs < App::Services::Base
     ds = ds.where(entity_id: qs[:entity_id]) if qs[:entity_id].present?
     ds = ds.where { created_at >= qs[:date_from] } if qs[:date_from].present?
     ds = ds.where { created_at <= qs[:date_to] } if qs[:date_to].present?
+
+    # RAM Details page's Activities tab: a real cross-entity feed for one RAM
+    # member built entirely out of this already-populated, already-generic
+    # table — no new columns, no new writer. `entity_id` is stored as a
+    # string (Base#write_audit_row!), so the two subquery id lists are mapped
+    # to strings to match. An unknown ram_id intentionally returns zero rows
+    # (Sequel[false]) rather than silently falling back to the unfiltered list.
+    if qs[:ram_id].present?
+      ram = RamMember[qs[:ram_id]]
+      if ram
+        referral_ids = Referral.where(ram_id: ram.slug).select_map(:id).map(&:to_s)
+        commission_ids = Commission.where(ram_id: ram.slug).select_map(:id).map(&:to_s)
+        ds = ds.where(
+          (Sequel[entity: 'RamMember'] & Sequel[entity_id: ram.id.to_s]) |
+          (Sequel[entity: 'Referral'] & Sequel[entity_id: referral_ids]) |
+          (Sequel[entity: 'Commission'] & Sequel[entity_id: commission_ids])
+        )
+      else
+        ds = ds.where(false)
+      end
+    end
+
     if qs[:search].present?
       # Same `Dataset#or` pitfall documented in leads.rb/site_visits.rb/
       # activity_logs.rb: `Dataset#or` ORs the new condition against the
@@ -31,7 +53,12 @@ class App::Services::AuditLogs < App::Services::Base
         Sequel.like(:entity_id, term, case_insensitive: true)
       )
     end
-    return_success(ds.all.map(&:to_pos))
+    if qs.key?(:page)
+      total = ds.count
+      return_success(ds.limit(limit).offset(offset).all.map(&:to_pos), meta: { total: total, page: (qs[:page] || 1).to_i, page_size: page_size })
+    else
+      return_success(ds.all.map(&:to_pos))
+    end
   end
 
   # Not reachable via routes.rb (do_crud only wires 'RL' for this resource),
