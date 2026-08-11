@@ -36,6 +36,11 @@ class App::Services::Uploads < App::Services::Base
     # since it authenticates with a client token, not an admin one, and
     # can't reach this admin-only presign endpoint.
     'client-documents' => 'clients/documents',
+    # Admin's Agent Detail > Documents tab (HR-style docs — Aadhaar, PAN,
+    # employment agreement, etc., see migrations/0019's own comment on that
+    # jsonb column). Was missing entirely, which is why "Download" there
+    # never had a real file to point at — see AgentDetailClient.js.
+    'agent-documents' => 'agents/documents',
   }.freeze
 
   MAX_FILENAME_LENGTH = 200

@@ -85,6 +85,52 @@ class App::Models::Agent < Sequel::Model
     mail.deliver!
   end
 
+  # Real linkage exists for these via Lead#agent_slug / Deal#agent_slug
+  # (migrations/0014/0018), so they're computed live on every read instead
+  # of trusted from the stored column an admin's Edit Agent form used to
+  # write (see services/agents.rb#update's now-shorter :save whitelist) —
+  # same "compute live, don't trust the stored column" precedent as
+  # FollowUp#with_overdue. `bookings` and `deals_closed` collapse into the
+  # same number here: the mock had them as two separately-arbitrary counters
+  # with no documented distinction, and there's only one real "closed deals
+  # for this agent" figure to derive from now.
+  #
+  # commission_earned/pending_commission stay admin-set and are NOT computed
+  # here: the `commissions` table only ever gets a row for a referral-linked
+  # deal (Deal#ensure_commission_for_closure! requires referral_id), so
+  # there's no real per-agent commission ledger yet to derive them from —
+  # that gap is Phase 2, not this pass.
+  def live_stats
+    @live_stats ||= begin
+      closed_deals = App::Models::Deal.where(agent_slug: slug, stage: 'Closed').all
+      leads_count = App::Models::Lead.where(agent_slug: slug).count
+      deals_count = closed_deals.size
+      total_revenue = closed_deals.sum { |d| d.value || 0 }
+      rate = commission_rate.to_f
+
+      monthly = closed_deals
+        .group_by { |d| (d.closing_date || d.created_at).strftime('%b %Y') }
+        .sort_by { |_, deals| deals.map { |d| d.closing_date || d.created_at }.min }
+        .map { |month, deals| { 'month' => month, 'earned' => (deals.sum { |d| d.value.to_i } * rate / 100.0).round } }
+
+      {
+        'leads_assigned' => leads_count,
+        'bookings' => deals_count,
+        'deals_closed' => deals_count,
+        'revenue' => total_revenue,
+        'conversion_rate' => leads_count.zero? ? 0 : ((deals_count / leads_count.to_f) * 100).round(1),
+        'commission_monthly' => monthly,
+      }
+    end
+  end
+
+  # Admin read shape (services/agents.rb#list/#get/#update/#create) — to_pos
+  # plus the live-computed fields above, same "to_pos.merge(...)" shape as
+  # FollowUp#with_overdue.
+  def with_live_stats
+    to_pos.merge(live_stats)
+  end
+
   # Doubles as "activate my account" for an agent who has never set a
   # password at all (encoded_password nil — the normal state right after an
   # admin creates the record via /admin/agents) — see services/agent_auth.rb#login's
@@ -126,6 +172,7 @@ class App::Models::Agent < Sequel::Model
   # expects" convention as User#as_pos/RamMember#as_pos/Client#as_pos. Never
   # includes encoded_password/current_session_id/reset_token/otp_code.
   def as_pos
+    stats = live_stats
     {
       'id' => id,
       'slug' => slug,
@@ -136,22 +183,22 @@ class App::Models::Agent < Sequel::Model
       'whatsapp' => whatsapp,
       'avatar' => avatar,
       'specialization' => specialization,
-      'dealsClosed' => deals_closed,
+      'dealsClosed' => stats['deals_closed'],
       'rating' => rating,
       'experienceYears' => experience_years,
       'strongAreas' => strong_area_ids,
       'address' => address,
       'status' => status,
       'territory' => territory,
-      'bookings' => bookings,
-      'revenue' => revenue,
-      'conversionRate' => conversion_rate,
+      'bookings' => stats['bookings'],
+      'revenue' => stats['revenue'],
+      'conversionRate' => stats['conversion_rate'],
       'commissionRate' => commission_rate,
       'commissionEarned' => commission_earned,
       'pendingCommission' => pending_commission,
-      'leadsAssigned' => leads_assigned,
+      'leadsAssigned' => stats['leads_assigned'],
       'joinedDate' => joined_date,
-      'commissionMonthly' => commission_monthly,
+      'commissionMonthly' => stats['commission_monthly'],
       'tasks' => tasks,
       'attendance' => attendance,
       'propertiesSold' => properties_sold,
