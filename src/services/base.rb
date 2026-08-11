@@ -140,6 +140,14 @@ class App::Services::Base
     else
       return_errors!('Unable to delete')
     end
+  # A record another table still has a foreign key pointing at (e.g. a
+  # Client with Referrals/Deals/Documents/etc. still referencing it) fails
+  # at the DB level with a raw constraint-violation message — surfaced
+  # as-is by the generic `rescue` below otherwise, which reads as a
+  # confusing technical error rather than telling the admin why the
+  # delete was refused.
+  rescue Sequel::ForeignKeyConstraintViolation
+    return_errors!("This #{item.class.name.split('::').last} can't be deleted because related records still reference it. Remove or reassign those first.", 409)
   rescue => e
     App.logger.error(e.message)
     App.logger.error(e.backtrace)
