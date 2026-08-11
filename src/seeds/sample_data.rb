@@ -244,12 +244,6 @@ module App
           seo: { title: "Villas in Hyderabad", description: "Independent villas in gated communities across Hyderabad." },
         },
         {
-          slug: "plot", name: "Plot", description: "Open land parcels for self-construction or land banking.",
-          icon: "LandPlot", banner: :land_plot_1, image: :land_plot_1, display_order: 3, colour: "#8A9A5B",
-          active: true, show_on_homepage: true, allow_search: true,
-          seo: { title: "Open Plots in Hyderabad", description: "RERA-approved, clear-title open plots across Hyderabad." },
-        },
-        {
           slug: "commercial", name: "Commercial", description: "Offices, retail spaces, and warehousing assets.",
           icon: "Building", banner: :office_1, image: :office_1, display_order: 4, colour: "#3A5A78",
           active: true, show_on_homepage: true, allow_search: true,
@@ -545,7 +539,7 @@ module App
 
       COMMUNITIES = [
         {
-          slug: "brigade-horizon", name: "Brigade Horizon", type: "Apartment", builder_slug: "brigade",
+          slug: "brigade-horizon", name: "Brigade Horizon", builder_slug: "brigade",
           area_slug: "kokapet", location_slug: "kokapet-phase-1", tagline: "Where the skyline meets serenity",
           status: "Under Construction", featured: true, trending: true, homepage_visibility: true,
           rera: "RERA Approved · P02400005678", price_min: 12_400_000, price_max: 28_500_000,
@@ -565,7 +559,7 @@ module App
           ],
         },
         {
-          slug: "prestige-lakeside", name: "Prestige Lakeside Habitat", type: "Apartment", builder_slug: "prestige",
+          slug: "prestige-lakeside", name: "Prestige Lakeside Habitat", builder_slug: "prestige",
           area_slug: "tellapur", location_slug: "tellapur-main-road", tagline: "Life, tuned to the rhythm of water",
           status: "Ready To Move", featured: false, trending: true, homepage_visibility: true,
           rera: "RERA Approved · P02400004821", price_min: 9_800_000, price_max: 21_000_000,
@@ -585,7 +579,7 @@ module App
           ],
         },
         {
-          slug: "sobha-royal-crest", name: "Sobha Royal Crest", type: "Villa", builder_slug: "sobha",
+          slug: "sobha-royal-crest", name: "Sobha Royal Crest", builder_slug: "sobha",
           area_slug: "narsingi", location_slug: "narsingi-villas", tagline: "Villa living, engineered to perfection",
           status: "Ready To Move", featured: true, trending: false, homepage_visibility: true,
           rera: "RERA Approved · P02400003112", price_min: 28_500_000, price_max: 52_000_000,
@@ -605,7 +599,7 @@ module App
           ],
         },
         {
-          slug: "lodha-evergreen", name: "Lodha Evergreen", type: "Apartment", builder_slug: "lodha",
+          slug: "lodha-evergreen", name: "Lodha Evergreen", builder_slug: "lodha",
           area_slug: "gachibowli", location_slug: "gachibowli-central", tagline: "An address that compounds in value",
           status: "Under Construction", featured: false, trending: true, homepage_visibility: true,
           rera: "RERA Approved · P02400006230", price_min: 14_200_000, price_max: 31_500_000,
@@ -625,7 +619,7 @@ module App
           ],
         },
         {
-          slug: "my-home-avatar", name: "My Home Avatar", type: "Apartment", builder_slug: "my-home",
+          slug: "my-home-avatar", name: "My Home Avatar", builder_slug: "my-home",
           area_slug: "kondapur", location_slug: "kondapur-main", tagline: "Elevated living, at the centre of it all",
           status: "RERA Approved", featured: false, trending: false, homepage_visibility: true,
           rera: "RERA Approved · P02400002087", price_min: 10_500_000, price_max: 24_000_000,
@@ -645,7 +639,7 @@ module App
           ],
         },
         {
-          slug: "aparna-zenon", name: "Aparna Zenon", type: "Apartment", builder_slug: "aparna",
+          slug: "aparna-zenon", name: "Aparna Zenon", builder_slug: "aparna",
           area_slug: "miyapur", location_slug: "miyapur-metro-belt", tagline: "Smart homes for the next generation",
           status: "Ready To Move", featured: false, trending: false, homepage_visibility: false,
           rera: "RERA Approved · P02400001450", price_min: 6_800_000, price_max: 15_800_000,
@@ -681,7 +675,6 @@ module App
 
           App::Models::Community.find_or_create(slug: row[:slug]) do |c|
             c.name = row[:name]
-            c.type = row[:type]
             c.builder_id = builder.id
             c.area_id = area.id
             c.location_id = location.id
@@ -756,7 +749,7 @@ module App
         },
         {
           slug: "narsingi-premium-open-plot", title: "Premium Open Plot", community_slug: "sobha-royal-crest",
-          builder_slug: "sobha", area_slug: "narsingi", location_slug: "narsingi-villas", type_name: "Plot",
+          builder_slug: "sobha", area_slug: "narsingi", location_slug: "narsingi-villas", type_name: "Independent House",
           status: "Available", price: 18_500_000, price_per_sqft: 6800, built_up_area: nil,
           land_area: 2722, created_date: "2026-03-05", bedrooms: nil, bathrooms: nil, balconies: nil,
           facing: "West", floor: nil, rera: true,
