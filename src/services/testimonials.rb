@@ -21,7 +21,7 @@ class App::Services::Testimonials < App::Services::Base
   def self.fields
     {
       save: [
-        :name, :role, :avatar, :rating, :quote, :status
+        :name, :role, :rating, :quote, :status, :show_on_homepage
       ]
     }
   end

@@ -2208,11 +2208,11 @@ module App
       #    count-guard.
       # ---------------------------------------------------------------------
       TESTIMONIALS = [
-        { name: "Kiran Kumar Reddy", role: "Villa Owner, Sobha Royal Crest", avatar: 23, rating: 5, quote: "Buying through REROCK was the best investment decision we made. Transparent pricing, zero surprises.", status: "Approved" },
-        { name: "Ayesha Khan", role: "Investor, Brigade Horizon", avatar: 32, rating: 5, quote: "The advisory team guided us with complete transparency, from site visit to registration.", status: "Approved" },
-        { name: "Vikram Malhotra", role: "Portfolio Client", avatar: 52, rating: 5, quote: "Portfolio tracking is incredibly useful — I can see appreciation across all four of my properties in one view.", status: "Approved" },
-        { name: "Meenal Deshpande", role: "First-time Buyer, Aparna Zenon", avatar: 28, rating: 5, quote: "As a first-time buyer, I expected confusion. Instead, every document and deadline was explained upfront.", status: "Approved" },
-        { name: "Srinivas Rao", role: "Commercial Investor", avatar: 19, rating: 5, quote: "The ROI calculator and rental yield data matched reality almost to the decimal. Genuinely rare in this industry.", status: "Pending" },
+        { name: "Kiran Kumar Reddy", role: "Villa Owner, Sobha Royal Crest", rating: 5, quote: "Buying through REROCK was the best investment decision we made. Transparent pricing, zero surprises.", status: "Approved" },
+        { name: "Ayesha Khan", role: "Investor, Brigade Horizon", rating: 5, quote: "The advisory team guided us with complete transparency, from site visit to registration.", status: "Approved" },
+        { name: "Vikram Malhotra", role: "Portfolio Client", rating: 5, quote: "Portfolio tracking is incredibly useful — I can see appreciation across all four of my properties in one view.", status: "Approved" },
+        { name: "Meenal Deshpande", role: "First-time Buyer, Aparna Zenon", rating: 5, quote: "As a first-time buyer, I expected confusion. Instead, every document and deadline was explained upfront.", status: "Approved" },
+        { name: "Srinivas Rao", role: "Commercial Investor", rating: 5, quote: "The ROI calculator and rental yield data matched reality almost to the decimal. Genuinely rare in this industry.", status: "Pending" },
       ].freeze
 
       def seed_testimonials!
@@ -2225,10 +2225,10 @@ module App
           App::Models::Testimonial.create do |t|
             t.name = row[:name]
             t.role = row[:role]
-            t.avatar = avatar_url(row[:avatar])
             t.rating = row[:rating]
             t.quote = row[:quote]
             t.status = row[:status]
+            t.show_on_homepage = true
           end
         end
         puts "Seeded testimonials: #{App::Models::Testimonial.count}"

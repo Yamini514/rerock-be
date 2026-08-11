@@ -236,8 +236,18 @@ class App::Services::Base
     # left for an admin to notice on their own. If the property has no
     # agent yet, agent_slug stays nil; callers surface that in their own
     # admin notification copy.
+    #
+    # Re-checked against a real Agent row here (not just "present?") because
+    # Property#agent_slug has no DB-level FK (deferred-string convention,
+    # same as Referral's own agent_slug — see models/referral.rb's comment)
+    # — a renamed/deleted Agent leaves a stale slug on the property, and
+    # without this guard that stale value would sail straight into the new
+    # Referral, where Referral#validate's own existence check then hard-
+    # fails the *visitor's* contact-form submission over an internal data
+    # hygiene issue they have nothing to do with.
     property = property_id.present? ? Property[property_id] : nil
     agent_slug = property&.agent_slug
+    agent_slug = nil if agent_slug.present? && Agent.where(slug: agent_slug).first.nil?
 
     validation_errors = nil
     lead = nil

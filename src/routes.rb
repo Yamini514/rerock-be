@@ -480,8 +480,8 @@ class App::Routes < Roda
           r.get { PublicAgents[r].list }
         end
 
-        # Public contact-form submission — creates a real Lead (source:
-        # "Website") instead of the old frontend-only fake toast. See
+        # Public contact-form submission — creates a ContactMessage (a
+        # lightweight inbox row, not a Lead/Referral). See
         # services/public_contact.rb.
         r.on 'contact' do
           r.post { PublicContact[r].create }
@@ -733,6 +733,12 @@ class App::Routes < Roda
 
         r.on 'newsletter-subscribers' do
           do_crud(NewsletterSubscribers, r, 'RUDL')
+        end
+
+        # Public Contact form inbox — read/update(read flag)/delete/list
+        # only, never admin-create (see services/contact_messages.rb).
+        r.on 'contact-messages' do
+          do_crud(ContactMessages, r, 'RUDL')
         end
 
         r.on 'seo-pages' do
