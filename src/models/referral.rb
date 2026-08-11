@@ -29,26 +29,25 @@ class App::Models::Referral < Sequel::Model
   # (RamPortal#update_my_referral and services/referrals.rb#update) — tells
   # the RAM the funnel moved, same "explicit call after save, guarded by an
   # actual-change check" convention as Deal#ensure_commission_for_closure!.
-  # Only fires for the two terminal-ish states a RAM would actually want to
-  # know about unprompted; every earlier stage (Site Visit Scheduled, etc.)
-  # is something the RAM already sees live on their own Referrals list.
+  # Only fires for the one terminal state a RAM would actually want to know
+  # about unprompted; "Cancelled" is deliberately silent (per product
+  # decision — a cancelled referral isn't a push-worthy event for the RAM),
+  # and every earlier stage (Site Visit Scheduled, etc.) is something the
+  # RAM already sees live on their own Referrals list.
   def notify_ram_of_status!
-    return unless ["Purchase Completed", "Cancelled"].include?(status)
+    return unless status == "Purchase Completed"
     return if ram_id.blank?
 
     ram = App::Models::RamMember.where(slug: ram_id).first
     return if ram.nil?
 
-    copy = status == 'Cancelled' ? ['Referral cancelled', "Your referral #{referred} was cancelled."]
-                                  : ['Referral purchased', "#{referred} completed their purchase — nice work!"]
-
     App::Models::Notification.create(
       audience: 'ram',
       recipient_id: ram.id,
       type: 'referral',
-      icon: status == 'Cancelled' ? 'XCircle' : 'PartyPopper',
-      title: copy[0],
-      message: copy[1]
+      icon: 'PartyPopper',
+      title: 'Referral purchased',
+      message: "#{referred} completed their purchase — nice work!"
     )
   end
 end

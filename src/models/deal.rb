@@ -38,4 +38,26 @@ class App::Models::Deal < Sequel::Model
     )
     commission.notify_ram_of_status!
   end
+
+  # Called after every save from both the admin (services/deals.rb#update)
+  # and agent-portal (services/agent_portal.rb#update_my_deal) update paths
+  # — same "call unconditionally after save, guard with an actual-change
+  # check" convention as SiteVisit#notify_client_of_status!. Fires once, the
+  # moment a deal reaches Closed, telling the client whose purchase it is.
+  # No-op for a deal with no linked client account (e.g. one entered with
+  # just a free-typed client_name, per Deals#create's own comment).
+  def notify_client_of_closure!
+    return unless column_changed?(:stage)
+    return unless stage == 'Closed'
+    return if client_id.nil?
+
+    App::Models::Notification.create(
+      audience: 'client',
+      recipient_id: client_id,
+      type: 'deal',
+      icon: 'PartyPopper',
+      title: 'Deal closed',
+      message: "Congratulations! Your purchase#{property_name.present? ? " of #{property_name}" : ""} has been finalized."
+    )
+  end
 end

@@ -37,13 +37,15 @@ class App::Services::SiteVisits < App::Services::Base
   # notes/date/time edits all ride the standard PUT/update below — every
   # field is just whitelisted like any other saveable field. Overridden
   # (rather than left as Base#update) only to run
-  # SiteVisit#ensure_deal_for_completion! after a successful save — see
-  # that method for why it's safe to call unconditionally on every update.
+  # SiteVisit#ensure_deal_for_completion! and #notify_client_of_status!
+  # after a successful save — see those methods for why it's safe to call
+  # both unconditionally on every update.
   def update(data=nil)
     data ||= data_for(:save)
     item.set_fields(data, data.keys)
     save(item) do |o|
       o.ensure_deal_for_completion!
+      o.notify_client_of_status!
       return_success(o.to_pos)
     end
   end

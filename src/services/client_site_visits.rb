@@ -74,7 +74,7 @@ class App::Services::ClientSiteVisits < App::Services::Base
   # The client's own scheduled/past site visits — replaces
   # SiteVisitsClient.js's old local-only mock (lib/data/portalSiteVisits.js).
   # SiteVisit only stores property_id/agent_slug (models/site_visit.rb), so
-  # this joins in the property's title/slug/locality and the assigned
+  # this joins in the property's title/slug/area and the assigned
   # agent's name rather than pushing that lookup onto the frontend.
   def mine
     client = CurrentClient.client_obj
@@ -94,7 +94,7 @@ class App::Services::ClientSiteVisits < App::Services::Base
       'id' => visit.id,
       'property_title' => property&.title,
       'property_slug' => property&.slug,
-      'location' => property&.locality,
+      'location' => property&.area&.name,
       'advisor_name' => agent&.name,
       'date' => visit.date,
       'time' => visit.time,

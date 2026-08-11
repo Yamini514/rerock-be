@@ -36,6 +36,44 @@ class App::Models::Client < Sequel::Model
     end
   end
 
+  # Called after every save from services/clients.rb — #create calls this
+  # unconditionally (a client entered with an agent already picked is
+  # always a fresh assignment), #update calls it only when the caller has
+  # already determined `assigned_agent_slug` actually changed (computed
+  # *before* the save, same "compare the incoming value to the pre-save
+  # value" convention as Commissions#update's own `status_changing` —
+  # deliberately NOT `column_changed?`, since that only reflects changes
+  # made after a record is loaded and is always false for values set via
+  # `.new` at creation, which would silently break the #create call site).
+  # Notifies both sides of the same event: the agent gets told a new client
+  # landed in their book of business, and the client gets told who their
+  # advisor now is — distinct from, and in addition to, #update's own
+  # generic "Your profile was updated" notification, which fires on any
+  # profile edit, not just this one.
+  def notify_of_agent_assignment!
+    return if assigned_agent_slug.blank?
+
+    agent = App::Models::Agent.where(slug: assigned_agent_slug).first
+    return if agent.nil?
+
+    App::Models::Notification.create(
+      audience: 'agent',
+      recipient_id: agent.id,
+      type: 'client',
+      icon: 'UserPlus',
+      title: 'New client assigned',
+      message: "A new client has been assigned to you: #{name}."
+    )
+    App::Models::Notification.create(
+      audience: 'client',
+      recipient_id: id,
+      type: 'account',
+      icon: 'UserCog',
+      title: 'Agent assigned',
+      message: "#{agent.name} has been assigned to you as your advisor."
+    )
+  end
+
   # Same bcrypt-over-encoded_password shape as User#password/RamMember#password
   # (models/user.rb, models/ram_member.rb) — kept as its own copy for the same
   # reason RamMember's is: separate portal, separate identity, separate JWT

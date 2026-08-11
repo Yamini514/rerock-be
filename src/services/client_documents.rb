@@ -30,7 +30,7 @@ class App::Services::ClientDocuments < App::Services::Base
       notes: params[:notes],
       status: "Pending"
     )
-    save(document) { |o| return_success(o.to_pos) }
+    save(document) { |o| o.notify_agent_of_upload!; return_success(o.to_pos) }
   end
 
   # The client's own uploaded documents, any status.

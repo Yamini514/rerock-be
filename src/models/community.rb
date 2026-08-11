@@ -5,8 +5,8 @@ class App::Models::Community < Sequel::Model
 
   # Defense-in-depth under CommunityForm.js's own client-side checks.
   # `location_id` is deliberately excluded from presence (migrations/0053
-  # made it nullable on purpose, replaced by free-text `locality`); `slug`
-  # uniqueness mirrors the already-existing DB unique index
+  # made it nullable on purpose); `slug` uniqueness mirrors the
+  # already-existing DB unique index
   # (migrations/0011). The price_min/price_max ordering check only fires
   # when those columns are actually being touched (`column_changed?`, via
   # the globally-loaded `:dirty` plugin) or on a brand-new row — so an

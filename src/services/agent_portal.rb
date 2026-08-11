@@ -44,6 +44,7 @@ class App::Services::AgentPortal < App::Services::Base
     deal.set_fields(allowed, allowed.keys)
     save(deal) do |o|
       o.ensure_commission_for_closure!
+      o.notify_client_of_closure!
       return_success(o.to_pos)
     end
   end
@@ -162,7 +163,7 @@ class App::Services::AgentPortal < App::Services::Base
 
     allowed = params.slice(:status, :notes, :date, :time)
     visit.set_fields(allowed, allowed.keys)
-    save(visit) { |o| o.ensure_deal_for_completion!; return_success(o.to_pos) }
+    save(visit) { |o| o.ensure_deal_for_completion!; o.notify_client_of_status!; return_success(o.to_pos) }
   end
 
   # Follow Ups (backend/src/services/follow_ups.rb) is a real `agent_id`
@@ -246,6 +247,13 @@ class App::Services::AgentPortal < App::Services::Base
         entity: "Document",
         entity_id: o.id.to_s,
         notes: o.notes
+      )
+      Notification.create(
+        audience: "admin",
+        type: "document",
+        icon: "FileCheck2",
+        title: "Document verified",
+        message: "#{agent.name} verified #{o.client.name}'s #{o.category.downcase} \"#{o.name}\" — awaiting your approval."
       )
       return_success(o.to_pos)
     end
