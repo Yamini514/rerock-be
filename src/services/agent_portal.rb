@@ -265,13 +265,12 @@ class App::Services::AgentPortal < App::Services::Base
   # (`if (!performance || !summary) return null`). Two different data
   # strategies, deliberately:
   #
-  # `summary`'s YTD-labeled tiles read straight off the agent's own already-
-  # real, already-maintained aggregate columns (leads_assigned/deals_closed/
-  # revenue/commission_earned/conversion_rate) — same "the agents table's own
-  # performance columns" precedent Reports#commission already established.
-  # These are lifetime-to-date totals, not actually reset every Jan 1 (no
-  # such column/reset job exists) — same caveat Reports#revenue already
-  # documents for its own numbers.
+  # `summary`'s YTD-labeled tiles (except commission_ytd) now read from
+  # Agent#live_stats — computed live from this agent's own real Leads/Deals
+  # (see that method's own comment for why commission_ytd is the one
+  # exception, still admin-set). These are lifetime-to-date totals, not
+  # actually reset every Jan 1 (no such column/reset job exists) — same
+  # caveat Reports#revenue already documents for its own numbers.
   #
   # `monthly`, by contrast, has no backing column at all except
   # commission_monthly — leads/deals/visits-by-month don't exist anywhere,
@@ -322,15 +321,17 @@ class App::Services::AgentPortal < App::Services::Base
 
     # Same ranking basis (revenue, desc) as Reports#commission's admin-wide
     # table — just resolved down to "where does *this* agent land" instead of
-    # returning every agent's row.
-    ranked_slugs = Agent.order(Sequel.desc(:revenue)).select_map(:slug)
+    # returning every agent's row. Ranked on live_stats' revenue (not the
+    # stored column) so this stays consistent with the summary tiles below.
+    ranked_slugs = Agent.all.sort_by { |a| -a.live_stats['revenue'] }.map(&:slug)
     rank = ranked_slugs.index(agent.slug)
 
+    stats = agent.live_stats
     summary = {
-      total_leads_ytd: agent.leads_assigned || 0,
-      avg_conversion_rate: agent.conversion_rate || 0,
-      deals_closed_ytd: agent.deals_closed || 0,
-      total_sales_ytd: agent.revenue || 0,
+      total_leads_ytd: stats['leads_assigned'],
+      avg_conversion_rate: stats['conversion_rate'],
+      deals_closed_ytd: stats['deals_closed'],
+      total_sales_ytd: stats['revenue'],
       commission_ytd: agent.commission_earned || 0,
       client_satisfaction: avg_satisfaction(reviews),
       monthly_ranking: rank.nil? ? nil : rank + 1,

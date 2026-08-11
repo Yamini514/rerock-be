@@ -622,7 +622,7 @@ class App::Routes < Roda
           do_crud(Agents, r, 'CRUDL')
         end
 
-        # RAM (Relationship Advisory Members) — table/class are RamMembers/
+        # RAM (REROCK Advisory Members) — table/class are RamMembers/
         # ram_members (avoiding an awkward bare `ram` SQL identifier), but the
         # URL path stays 'ram' to match the frontend's existing /admin/ram route.
         r.on 'ram' do
