@@ -38,6 +38,18 @@ class App::Services::Leads < App::Services::Base
     end
   end
 
+  # Overridden (rather than left as Base#create) only to run
+  # Lead#notify_agent_of_assignment! after a successful save — covers the
+  # rarer case of a lead being entered with an agent already picked, same
+  # as #update below covers the far more common "assign this existing
+  # enquiry to an agent" action.
+  def create
+    save(model.new(data_for(:save))) do |o|
+      o.notify_agent_of_assignment!
+      return_success(o.to_pos)
+    end
+  end
+
   # Status transitions (what the old admin.js mock's "Convert to Lead" action
   # becomes — see app/admin/(portal)/enquiries/page.js) and follow-up date
   # updates all ride the standard PUT/update below. `timeline` is just
@@ -46,7 +58,18 @@ class App::Services::Leads < App::Services::Base
   # convention already used for Community#amenity_ids / Property#tag_ids,
   # just for a jsonb array of objects instead of an integer[] of ids — there's
   # no per-entry field whitelisting here, same as Property#floor_plans/
-  # #pricing_trend).
+  # #pricing_trend). Overridden only to run Lead#notify_agent_of_assignment!
+  # after a successful save.
+  def update(data = nil)
+    data ||= data_for(:save)
+    agent_changing = data.key?(:agent_slug) && data[:agent_slug] != item.agent_slug
+    item.set_fields(data, data.keys)
+    save(item) do |o|
+      o.notify_agent_of_assignment! if agent_changing
+      return_success(o.to_pos)
+    end
+  end
+
   def self.fields
     {
       save: [

@@ -25,6 +25,66 @@ class App::Models::Agent < Sequel::Model
     save
   end
 
+  # Called after every save from the admin update path
+  # (services/agents.rb#update) — same "call unconditionally after save,
+  # guard with an actual-change check" convention as
+  # SiteVisit#notify_client_of_status!/Deal#notify_client_of_closure!. Only
+  # fires on the specific Pending -> Active transition (the real approval
+  # moment, e.g. AgentsPage's "Approve" action) — not, say, an Inactive ->
+  # Active reactivation toggle elsewhere on the Agent Detail page, which
+  # isn't a "your registration was approved" event.
+  def notify_of_approval!
+    return unless column_changed?(:status)
+    return unless initial_value(:status) == 'Pending' && status == 'Active'
+
+    App::Models::Notification.create(
+      audience: 'agent',
+      recipient_id: id,
+      type: 'account',
+      icon: 'CheckCircle2',
+      title: 'Registration approved',
+      message: 'Your registration has been approved. You can now log in to your account.'
+    )
+    send_approval_email(ENV['AGENT_APP_URL'] || 'http://localhost:3000/agent')
+  end
+
+  # The notice that actually reaches the agent in time — unlike the in-app
+  # Notification above, which sits behind agent_auth_required! and so can't
+  # be seen until *after* a first successful login, email works before
+  # they're able to log in at all (agent_auth.rb#login blocks sign-in while
+  # status is still "Pending"), same "email is the only channel that works
+  # pre-login" reasoning as Client#send_temporary_password_email. No
+  # password/reset link needed here — a self-registered agent already set
+  # their own password at registration (see #register above), they just
+  # need to know it's time to use it.
+  def send_approval_email(base_url)
+    agent_email = self.email
+    agent_name = self.name
+    login_url = "#{base_url}/login"
+
+    mail = Mail.new do
+      from    'apps@srinishtha.com'
+      to      agent_email
+      subject 'Your REROCK Realty agent account is approved'
+      html_part do
+        content_type 'text/html; charset=UTF-8'
+        body <<-HTML
+          <html>
+          <body>
+            <h1>You're approved!</h1>
+            <p>Hello #{agent_name},</p>
+            <p>Your REROCK Realty agent registration has been approved. You can now log in to your account.</p>
+            <p><a href="#{login_url}">Log in</a></p>
+            <p>Thank you,<br/>REROCK Realty</p>
+          </body>
+          </html>
+        HTML
+      end
+    end
+
+    mail.deliver!
+  end
+
   # Doubles as "activate my account" for an agent who has never set a
   # password at all (encoded_password nil — the normal state right after an
   # admin creates the record via /admin/agents) — see services/agent_auth.rb#login's

@@ -64,6 +64,27 @@ class App::Services::RamMembers < App::Services::Base
   # the RAM Portal spec wants them replaced entirely by one real setting:
   # `default_commission_rate`, the % Deal#ensure_commission_for_closure!
   # applies to this RAM's future closed deals.
+  # Overridden (rather than left as Base#update) only to let the RAM know
+  # their own record changed — same "notify the person whose data it is"
+  # convention as Client#update's "Your profile was updated". Fires on any
+  # admin edit here (status/Approve toggles included), same "any change to
+  # your own record is worth a notice" scope as the Client-side equivalent.
+  def update(data = nil)
+    data ||= data_for(:save)
+    item.set_fields(data, data.keys)
+    save(item) do |o|
+      Notification.create(
+        audience: 'ram',
+        recipient_id: o.id,
+        type: 'profile',
+        icon: 'UserCog',
+        title: 'Your profile was updated',
+        message: 'Your account details were updated by our team.'
+      )
+      return_success(o.to_pos)
+    end
+  end
+
   def self.fields
     {
       save: [

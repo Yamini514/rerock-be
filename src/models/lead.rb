@@ -4,6 +4,31 @@ class App::Models::Lead < Sequel::Model
   many_to_one :area
   many_to_one :client
 
+  # Called after every save from services/leads.rb — #create calls this
+  # unconditionally (a lead entered with an agent already picked is always
+  # a fresh assignment), #update calls it only when the caller has already
+  # determined `agent_slug` actually changed (computed *before* the save,
+  # same "compare the incoming value to the pre-save value" convention as
+  # Commissions#update's own `status_changing` — deliberately NOT
+  # `column_changed?`, since that only reflects changes made after a
+  # record is loaded and is always false for values set via `.new` at
+  # creation, which would silently break the #create call site).
+  def notify_agent_of_assignment!
+    return if agent_slug.blank?
+
+    agent = App::Models::Agent.where(slug: agent_slug).first
+    return if agent.nil?
+
+    App::Models::Notification.create(
+      audience: 'agent',
+      recipient_id: agent.id,
+      type: 'lead',
+      icon: 'UserPlus',
+      title: 'New lead assigned',
+      message: "A new lead has been assigned to you: #{client_name}."
+    )
+  end
+
   EMAIL_REGEXP = /\A[^\s@]+@[^\s@]+\.[^\s@]+\z/
 
   # Defense-in-depth under the admin "Log Enquiry" form's / public contact

@@ -27,7 +27,19 @@ class App::Services::Agents < App::Services::Base
   # properties_assigned, documents, activity_log) all ride the standard
   # PUT/update below, whitelisted like any other saveable column — the
   # frontend sends each array back whole, already-appended, same convention
-  # as Client#notes/#communication_log/Lead#timeline.
+  # as Client#notes/#communication_log/Lead#timeline. Overridden (rather
+  # than left as Base#update) only to run Agent#notify_of_approval! after a
+  # successful save — see that method for why it's safe to call
+  # unconditionally on every update.
+  def update(data = nil)
+    data ||= data_for(:save)
+    item.set_fields(data, data.keys)
+    save(item) do |o|
+      o.notify_of_approval!
+      return_success(o.to_pos)
+    end
+  end
+
   def self.fields
     {
       save: [

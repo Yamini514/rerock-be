@@ -47,25 +47,36 @@ class App::Services::Clients < App::Services::Base
     client.email_verified_at = Time.now
     save(client) do |obj|
       obj.send_temporary_password_email(temp_password)
+      obj.notify_of_agent_assignment!
       return_success(obj.to_pos)
     end
   end
 
-  # Same as Base#update, but also lets the client know their own profile
-  # changed — the only difference from the inherited version is the
-  # Notification.create after a successful save.
+  # Same as Base#update, but also lets the client know something happened
+  # to their own account, and lets the agent know if they're the one newly
+  # assigned to this client — the only difference from the inherited
+  # version is which Notification(s) fire after a successful save. When
+  # this save is specifically an agent (re)assignment, the client gets the
+  # more specific "Agent assigned" notice (Client#notify_of_agent_assignment!,
+  # which also tells the agent) instead of the generic one — a client
+  # doesn't need both messages for the same single edit.
   def update(data=nil)
     data ||= data_for(:save)
+    agent_changing = data.key?(:assigned_agent_slug) && data[:assigned_agent_slug] != item.assigned_agent_slug
     item.set_fields(data, data.keys)
     save(item) do |obj|
-      Notification.create(
-        audience: "client",
-        recipient_id: obj.id,
-        type: "profile",
-        icon: "UserCog",
-        title: "Your profile was updated",
-        message: "Your account details were updated by our team."
-      )
+      if agent_changing
+        obj.notify_of_agent_assignment!
+      else
+        Notification.create(
+          audience: "client",
+          recipient_id: obj.id,
+          type: "profile",
+          icon: "UserCog",
+          title: "Your profile was updated",
+          message: "Your account details were updated by our team."
+        )
+      end
       return_success(obj.to_pos)
     end
   end

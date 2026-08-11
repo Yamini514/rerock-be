@@ -35,32 +35,24 @@ class App::Models::Commission < Sequel::Model
 
   # Called after every status-changing save (services/commissions.rb#update,
   # Deal#ensure_commission_for_closure!'s initial creation) — tells the RAM
-  # this commission belongs to about the change. Idempotent by construction:
-  # only fires when `status` actually changed (or on the very first create),
-  # matching the "only meaningful transitions" reasoning already used for
-  # Base#write_audit_log!'s create-vs-update branch.
+  # about their commission, but deliberately only at the one moment that
+  # matters to them ("a purchase you referred just earned you a commission"),
+  # not every later admin-side lifecycle step (eligible/approved/processing/
+  # paid/rejected/cancelled) — those stay visible to the RAM on their own
+  # Income page, just without a push for each one, per product decision.
   def notify_ram_of_status!
+    return unless status == 'PENDING'
+
     ram = App::Models::RamMember.where(slug: ram_id).first
     return if ram.nil?
-
-    copy = {
-      'PENDING' => ['Commission added', "A commission of #{format_inr(commission_amount)} was calculated for your referral."],
-      'ELIGIBLE' => ['Commission eligible', "Your commission of #{format_inr(commission_amount)} is now eligible for payout."],
-      'APPROVED' => ['Commission approved', "Your commission of #{format_inr(commission_amount)} has been approved."],
-      'PROCESSING' => ['Commission processing', "Your commission of #{format_inr(commission_amount)} is being processed for payment."],
-      'PAID' => ['Commission Received', "You earned #{format_inr(commission_amount)} commission on the successful purchase of #{referral&.property&.title || 'a referred property'}."],
-      'REJECTED' => ['Commission rejected', "Your commission for this referral was rejected. Contact an admin for details."],
-      'CANCELLED' => ['Commission cancelled', "Your commission for this referral was cancelled."],
-    }[status]
-    return if copy.nil?
 
     App::Models::Notification.create(
       audience: 'ram',
       recipient_id: ram.id,
       type: 'commission',
       icon: 'Wallet',
-      title: copy[0],
-      message: copy[1]
+      title: 'Commission added',
+      message: "A commission of #{format_inr(commission_amount)} was calculated for your referral."
     )
   end
 
