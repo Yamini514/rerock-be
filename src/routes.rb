@@ -44,6 +44,7 @@ class App::Routes < Roda
     'SiteVisits' => 'crm',
     'Referrals' => 'crm',
     'Commissions' => 'crm',
+    'Documents' => 'crm',
   }.freeze
 
   ACTION_FLAGS = { 'C' => 'create', 'R' => 'view', 'L' => 'view', 'U' => 'edit', 'D' => 'delete' }.freeze
@@ -612,6 +613,16 @@ class App::Routes < Roda
 
         r.on 'clients' do
           do_crud(Clients, r, 'CRUDL')
+        end
+
+        # Admin CRM — Client Details > Documents tab. Reuses the same
+        # `documents` table/Document model as the Client Portal's own
+        # self-service upload (client-portal/documents, services/
+        # client_documents.rb) so an admin sees the exact same real rows a
+        # client uploaded, just scoped via ?client_id= instead of the
+        # client's own token. See services/documents.rb.
+        r.on 'documents' do
+          do_crud(Documents, r, 'CRUDL')
         end
 
         r.on 'deals' do
