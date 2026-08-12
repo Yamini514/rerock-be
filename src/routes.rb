@@ -31,7 +31,6 @@ class App::Routes < Roda
     'Notifications' => 'notifications',
     'Users' => 'users',
     'Roles' => 'roles',
-    'ActivityLogs' => 'activityLogs',
     'AuditLogs' => 'auditLogs',
     'Blogs' => 'marketing',
     'Testimonials' => 'marketing',
@@ -771,18 +770,10 @@ class App::Routes < Roda
           r.put { HomepageSettings[r].update }
         end
 
-        # Activity Logs — read-only: logs are system-generated, so only
+        # Audit Logs — read-only: this is a polymorphic database change log
+        # (old value -> new value per entity), system-generated, so only
         # Read + List are wired (no r.post/r.put/r.delete block is ever
         # registered for this resource, per do_crud's 'RL' arg above).
-        r.on 'activity-logs' do
-          do_crud(ActivityLogs, r, 'RL')
-        end
-
-        # Audit Logs — read-only, same reasoning as Activity Logs: this is a
-        # polymorphic database change log (old value -> new value per
-        # entity), system-generated, so only Read + List are wired (no
-        # r.post/r.put/r.delete block is ever registered for this resource,
-        # per do_crud's 'RL' arg above).
         r.on 'audit-logs' do
           do_crud(AuditLogs, r, 'RL')
         end
