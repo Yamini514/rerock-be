@@ -7,20 +7,17 @@ class App::Services::Amenities < App::Services::Base
   # alphabetically instead. Supports name search and an exact category filter
   # (categories are the fixed AMENITY_CATEGORIES list on the frontend), same
   # search-and-filter convention as every other Property Catalog resource.
+  SORTABLE_COLUMNS = %w[name category].freeze
+
   def list
-    ds = model.order(:name)
+    ds = model
     ds = ds.where(category: qs[:category]) if qs[:category].present?
     if qs[:search].present?
       ds = ds.where(Sequel.like(:name, "%#{qs[:search]}%", case_insensitive: true))
     end
+    ds = apply_sort(ds, SORTABLE_COLUMNS, default: [[:name, :asc]])
 
-    if qs.key?(:page)
-      total = ds.count
-      rows = ds.limit(limit).offset(offset).all
-      return_success(rows.map { |a| with_usage(a) }, meta: { total: total, page: (qs[:page] || 1).to_i, page_size: page_size })
-    else
-      return_success(ds.all.map { |a| with_usage(a) })
-    end
+    paginated_response(ds) { |a| with_usage(a) }
   end
 
   def self.fields

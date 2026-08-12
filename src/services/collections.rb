@@ -4,8 +4,10 @@ class App::Services::Collections < App::Services::Base
   # Mirrors lib/data/collections.js: a small, always-curated set of named
   # property groupings shown in displayOrder (same convention as
   # PropertyTypes#list), with name search.
+  SORTABLE_COLUMNS = %w[name display_order created_at].freeze
+
   def list
-    ds = model.order(:display_order, :id)
+    ds = model
     # Additive/opt-in — the admin management table never passes `active`
     # (it needs both active and inactive rows for the toggle UI); the
     # public site's read-only consumer always passes `active=true` so
@@ -14,7 +16,8 @@ class App::Services::Collections < App::Services::Base
     if qs[:search].present?
       ds = ds.where(Sequel.like(:name, "%#{qs[:search]}%", case_insensitive: true))
     end
-    return_success(ds.all.map(&:to_pos))
+    ds = apply_sort(ds, SORTABLE_COLUMNS, default: [[:display_order, :asc], [:id, :asc]])
+    paginated_response(ds)
   end
 
   # addCollection defaults displayOrder to "end of the list" when the caller

@@ -4,21 +4,27 @@ class App::Services::Areas < App::Services::Base
   # Mirrors lib/data/areas.js: areas are shown in their curated displayOrder
   # (same convention as PropertyTypes#list), plus name search and the
   # Active/Archived scope shared by every Property Catalog resource so far.
+  SORTABLE_COLUMNS = %w[name display_order created_at].freeze
+
   def list
-    ds = model.order(:display_order, :id)
+    ds = model
     ds = ds.where(archived: qs[:archived].to_s == 'true') if qs.key?(:archived)
     if qs[:search].present?
       ds = ds.where(Sequel.like(:name, "%#{qs[:search]}%", case_insensitive: true))
     end
+    ds = apply_sort(ds, SORTABLE_COLUMNS, default: [[:display_order, :asc], [:id, :asc]])
 
+    # Grouped over the whole Properties/Communities tables in one query
+    # regardless of which page of Areas is being returned — unaffected by
+    # pagination, same as PropertyTypes#property_stats_by_type.
     property_counts, community_counts, builder_counts = stats_by_area
-    return_success(ds.all.map { |a|
+    paginated_response(ds) { |a|
       a.to_pos.merge(
         'property_count' => property_counts[a.id] || 0,
         'community_count' => community_counts[a.id] || 0,
         'builder_count' => builder_counts[a.id] || 0
       )
-    })
+    }
   end
 
   # lib/data/areas.js's addArea defaults displayOrder to "end of the list"

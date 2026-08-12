@@ -5,19 +5,16 @@ class App::Services::PropertyTags < App::Services::Base
   # displayOrder/archived scope — the admin tab is just a name + colour
   # library with no archive flow), ordered alphabetically, with name search
   # same convention as every other Property Catalog resource.
+  SORTABLE_COLUMNS = %w[name].freeze
+
   def list
-    ds = model.order(:name)
+    ds = model
     if qs[:search].present?
       ds = ds.where(Sequel.like(:name, "%#{qs[:search]}%", case_insensitive: true))
     end
+    ds = apply_sort(ds, SORTABLE_COLUMNS, default: [[:name, :asc]])
 
-    if qs.key?(:page)
-      total = ds.count
-      rows = ds.limit(limit).offset(offset).all
-      return_success(rows.map { |t| with_usage(t) }, meta: { total: total, page: (qs[:page] || 1).to_i, page_size: page_size })
-    else
-      return_success(ds.all.map { |t| with_usage(t) })
-    end
+    paginated_response(ds) { |t| with_usage(t) }
   end
 
   def self.fields

@@ -204,6 +204,39 @@ class App::Services::Base
     [(qs[:page_size] || 20).to_i, 300].min
   end
 
+  # Shared dynamic-sort guard for #list overrides: `qs[:sort]` only takes
+  # effect when it's in the caller's own allowlist of real, currently-visible
+  # columns (never build the allowlist from client input) — this is what
+  # keeps a `sort` query param from being used to inject an arbitrary column
+  # into `ORDER BY`. `default` is an array of `[column, direction]` pairs
+  # (lets callers like Areas/PropertyTypes keep a `[:display_order, :id]`
+  # two-column default order), applied whenever `sort` is absent or not
+  # allowed; a valid `sort` always resolves to a single-column order.
+  def apply_sort(ds, allowed_columns, default:)
+    pairs = default
+    if qs[:sort].present? && allowed_columns.map(&:to_s).include?(qs[:sort].to_s)
+      pairs = [[qs[:sort].to_sym, qs[:sort_dir].to_s == 'desc' ? :desc : :asc]]
+    end
+    ds.order(*pairs.map { |col, dir| dir == :desc ? Sequel.desc(col) : Sequel.asc(col) })
+  end
+
+  # Generalizes the opt-in `qs.key?(:page)` pagination block that used to be
+  # hand-copied into every paginating #list (see properties.rb/communities.rb
+  # for the original). Pass a block when a row needs more than a plain
+  # `to_pos` (e.g. property_types.rb/areas.rb merge computed aggregates onto
+  # each row) — those aggregate queries are grouped over the whole related
+  # table in one shot, so they're unaffected by which page is being returned.
+  def paginated_response(ds)
+    if qs.key?(:page)
+      total = ds.count
+      rows = ds.limit(limit).offset(offset).all
+      return_success(rows.map { |row| block_given? ? yield(row) : row.to_pos }, meta: { total: total, page: (qs[:page] || 1).to_i, page_size: page_size })
+    else
+      rows = ds.all
+      return_success(rows.map { |row| block_given? ? yield(row) : row.to_pos })
+    end
+  end
+
   def current_client_id
     App.cu.user_obj.client_id
   end

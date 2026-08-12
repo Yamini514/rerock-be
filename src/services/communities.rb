@@ -4,8 +4,10 @@ class App::Services::Communities < App::Services::Base
   # Mirrors lib/data/communities.js: search by name, plus filters for the
   # three FKs (builder/area/location) and status, and the Active/Archived
   # scope shared by every Property Catalog resource so far.
+  SORTABLE_COLUMNS = %w[name price_min created_at status].freeze
+
   def list
-    ds = model.order(Sequel.desc(:created_at))
+    ds = model
     ds = ds.where(archived: qs[:archived].to_s == 'true') if qs.key?(:archived)
     ds = ds.where(builder_id: qs[:builder_id]) if qs[:builder_id].present?
     ds = ds.where(area_id: qs[:area_id]) if qs[:area_id].present?
@@ -14,16 +16,12 @@ class App::Services::Communities < App::Services::Base
     if qs[:search].present?
       ds = ds.where(Sequel.like(:name, "%#{qs[:search]}%", case_insensitive: true))
     end
+    ds = apply_sort(ds, SORTABLE_COLUMNS, default: [[:created_at, :desc]])
 
     # Opt-in: same non-breaking contract as Properties#list — no `page`
     # param means the exact bare-array response every existing caller
     # already gets.
-    if qs.key?(:page)
-      total = ds.count
-      return_success(ds.limit(limit).offset(offset).all.map(&:to_pos), meta: { total: total, page: (qs[:page] || 1).to_i, page_size: page_size })
-    else
-      return_success(ds.all.map(&:to_pos))
-    end
+    paginated_response(ds)
   end
 
   # Archive/restore (archiveCommunity/restoreCommunity in the mock) and the

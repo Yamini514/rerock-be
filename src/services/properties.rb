@@ -10,8 +10,10 @@ class App::Services::Properties < App::Services::Base
   # in addition to a single value — splitting a single value is a no-op
   # (`"3".split(',') == ["3"]`), so every existing single-value caller
   # (admin list, property detail lookups) is unaffected.
+  SORTABLE_COLUMNS = %w[title price created_at status].freeze
+
   def list
-    ds = model.order(Sequel.desc(:created_at))
+    ds = model
     ds = ds.where(archived: qs[:archived].to_s == 'true') if qs.key?(:archived)
     ds = ds.where(community_id: ids_from(qs[:community_id])) if qs[:community_id].present?
     ds = ds.where(builder_id: ids_from(qs[:builder_id])) if qs[:builder_id].present?
@@ -36,18 +38,14 @@ class App::Services::Properties < App::Services::Base
       ds = ds.where(community_id: Community.where(Sequel.expr(:investment_score) >= score).select(:id))
     end
     ds = ds.where(amenity_filter(ids_from(qs[:amenity_ids]))) if qs[:amenity_ids].present?
+    ds = apply_sort(ds, SORTABLE_COLUMNS, default: [[:created_at, :desc]])
 
     # Opt-in: a caller that doesn't send `page` gets the exact bare-array
     # response it always has (every existing admin/public caller) — fully
     # non-breaking. `offset`/`limit`/`page_size` already exist on Base
     # (previously unused here) — this table is the one most likely to
     # outgrow an unpaginated `.all` as the catalog grows.
-    if qs.key?(:page)
-      total = ds.count
-      return_success(ds.limit(limit).offset(offset).all.map(&:to_pos), meta: { total: total, page: (qs[:page] || 1).to_i, page_size: page_size })
-    else
-      return_success(ds.all.map(&:to_pos))
-    end
+    paginated_response(ds)
   end
 
   # Archive/restore (archiveProperty/restoreProperty), the featured toggle

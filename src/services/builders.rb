@@ -4,13 +4,16 @@ class App::Services::Builders < App::Services::Base
   # Mirrors lib/data/builders.js's own filtering: search by name, and scope to
   # the Active/Archived toggle via the `archived` flag when the frontend passes
   # it as a query param (same convention as Users#list's `search`).
+  SORTABLE_COLUMNS = %w[name created_at rating status].freeze
+
   def list
-    ds = model.order(Sequel.desc(:created_at))
+    ds = model
     ds = ds.where(archived: qs[:archived].to_s == 'true') if qs.key?(:archived)
     if qs[:search].present?
       ds = ds.where(Sequel.like(:name, "%#{qs[:search]}%", case_insensitive: true))
     end
-    return_success(ds.all.map(&:to_pos))
+    ds = apply_sort(ds, SORTABLE_COLUMNS, default: [[:created_at, :desc]])
+    paginated_response(ds)
   end
 
   # Archive/restore (matching lib/data/builders.js's archiveBuilder/restoreBuilder)

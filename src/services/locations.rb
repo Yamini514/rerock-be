@@ -6,14 +6,17 @@ class App::Services::Locations < App::Services::Base
   # every Property Catalog resource so far. `area_id` is accepted as an extra
   # filter (not used by the current admin page, which fetches the full list
   # and builds its own tree, but useful for any future scoped lookup).
+  SORTABLE_COLUMNS = %w[name display_order created_at].freeze
+
   def list
-    ds = model.order(:display_order, :id)
+    ds = model
     ds = ds.where(archived: qs[:archived].to_s == 'true') if qs.key?(:archived)
     ds = ds.where(area_id: qs[:area_id]) if qs[:area_id].present?
     if qs[:search].present?
       ds = ds.where(Sequel.like(:name, "%#{qs[:search]}%", case_insensitive: true))
     end
-    return_success(ds.all.map(&:to_pos))
+    ds = apply_sort(ds, SORTABLE_COLUMNS, default: [[:display_order, :asc], [:id, :asc]])
+    paginated_response(ds)
   end
 
   # lib/data/locations.js's addLocation defaults displayOrder to "end of the

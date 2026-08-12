@@ -5,20 +5,26 @@ class App::Services::PropertyTypes < App::Services::Base
   # in its curated displayOrder, so list (unlike Builders' created_at-desc)
   # orders by display_order asc. Same search-by-name / archived-scope
   # convention as Builders#list otherwise.
+  SORTABLE_COLUMNS = %w[name display_order created_at].freeze
+
   def list
-    ds = model.order(:display_order, :id)
+    ds = model
     ds = ds.where(archived: qs[:archived].to_s == 'true') if qs.key?(:archived)
     if qs[:search].present?
       ds = ds.where(Sequel.like(:name, "%#{qs[:search]}%", case_insensitive: true))
     end
+    ds = apply_sort(ds, SORTABLE_COLUMNS, default: [[:display_order, :asc], [:id, :asc]])
 
+    # Grouped over the whole `properties` table in one query regardless of
+    # which page of PropertyTypes is being returned, so this stays correct
+    # (and no more expensive) under pagination.
     counts, avg_prices = property_stats_by_type
-    return_success(ds.all.map { |t|
+    paginated_response(ds) { |t|
       t.to_pos.merge(
         'listings_count' => counts[t.id] || 0,
         'avg_price' => avg_prices[t.id] ? avg_prices[t.id].to_i : 0
       )
-    })
+    }
   end
 
   # lib/data/propertyTypes.js's addPropertyType defaults displayOrder to
