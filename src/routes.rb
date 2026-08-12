@@ -704,6 +704,34 @@ class App::Routes < Roda
           Reports[r].revenue
         end
 
+        r.get 'reports/leads' do
+          Reports[r].leads
+        end
+
+        r.get 'reports/site-visits' do
+          Reports[r].site_visits
+        end
+
+        r.get 'reports/deals' do
+          Reports[r].deals
+        end
+
+        r.get 'reports/clients' do
+          Reports[r].clients
+        end
+
+        r.get 'reports/agent-performance' do
+          Reports[r].agent_performance
+        end
+
+        r.get 'reports/inventory' do
+          Reports[r].inventory
+        end
+
+        r.get 'reports/crm-activity' do
+          Reports[r].crm_activity
+        end
+
         r.on 'blogs' do
           do_crud(Blogs, r, 'CRUDL')
         end
