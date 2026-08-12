@@ -17,8 +17,21 @@ class App::Services::Users < App::Services::Base
     return_success(item.as_pos)
   end
 
+  # The Admin Portal's Users page no longer lets an admin pick a role or a
+  # permission tier — every account here is simply "Admin" (RAM and Agent
+  # accounts live in their own separate tables/portals, never in `users`).
+  # So every account created here gets full access (is_super_admin) too:
+  # with the Roles/Permissions matrix UI gone, there's no way left for an
+  # admin to grant a lesser role any real capability, and a new admin with
+  # zero permissions would just be locked out of the portal they were just
+  # added to. `role_id` is still set (to a lazily-created "Admin" row) purely
+  # as a display label distinguishing regular admins from the one seeded
+  # bootstrap "Super Admin" account, not as an access-control mechanism.
   def create
-    obj = model.new(data_for(:save))
+    data = data_for(:save)
+    data[:role_id] ||= default_admin_role.id
+    data[:is_super_admin] = true if data[:is_super_admin].nil?
+    obj = model.new(data)
     save(obj) { |o| return_success(o.as_pos) }
   end
 
@@ -134,5 +147,15 @@ class App::Services::Users < App::Services::Base
         :phone_number, :designation, :department, :reporting_to_id, :permission_overrides
       ]
     }
+  end
+
+  private
+
+  def default_admin_role
+    App::Models::Role.find_or_create(slug: 'role-admin') do |r|
+      r.name = 'Admin'
+      r.level = 1
+      r.status = 'Active'
+    end
   end
 end
