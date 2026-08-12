@@ -348,13 +348,12 @@ class App::Services::Base
   # ---------------------------------------------------------------------
 
   # Models excluded from auto-audit-logging: writing an audit row about a
-  # change to AuditLog/ActivityLog itself would be noisy at best and, if
-  # anything ever routed those models through Base#save/#delete (today
-  # they're wired read-only via do_crud(..., 'RL'), so nothing does),
-  # recursive at worst. Compared by class name (string) rather than a
-  # constant array of classes, so this doesn't depend on model
-  # load-order relative to base.rb.
-  AUDIT_EXCLUDED_MODELS = %w[App::Models::AuditLog App::Models::ActivityLog].freeze
+  # change to AuditLog itself would be noisy at best and, if anything ever
+  # routed that model through Base#save/#delete (today it's wired read-only
+  # via do_crud(..., 'RL'), so nothing does), recursive at worst. Compared
+  # by class name (string) rather than a constant array of classes, so this
+  # doesn't depend on model load-order relative to base.rb.
+  AUDIT_EXCLUDED_MODELS = %w[App::Models::AuditLog].freeze
 
   # Columns that are either noisy (touched on nearly every save, e.g.
   # timestamps), sensitive (password/session/token material), or simply
