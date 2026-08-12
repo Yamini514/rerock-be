@@ -7,14 +7,17 @@ class App::Services::Faqs < App::Services::Base
   # distinct values derived from the fetched list itself — see the migration
   # comment) plus a search across both question and answer text, since a
   # freeform FAQ search naturally means "does this appear anywhere in Q or A."
+  SORTABLE_COLUMNS = %w[category q created_at].freeze
+
   def list
-    ds = model.order(Sequel.desc(:created_at), Sequel.desc(:id))
+    ds = model
     ds = ds.where(category: qs[:category]) if qs[:category].present?
     if qs[:search].present?
       term = "%#{qs[:search]}%"
       ds = ds.where(Sequel.like(:q, term, case_insensitive: true) | Sequel.like(:a, term, case_insensitive: true))
     end
-    return_success(ds.all.map(&:to_pos))
+    ds = apply_sort(ds, SORTABLE_COLUMNS, default: [[:created_at, :desc], [:id, :desc]])
+    paginated_response(ds)
   end
 
   # No archive/restore/status-transition concept (same as the mock's plain

@@ -6,8 +6,10 @@ class App::Services::JobOpenings < App::Services::Base
   # Testimonials/Blogs. Search across title/department/location (the
   # Table's searchPlaceholder covers all three visually), plus an exact
   # `type` filter for the JOB_TYPES enum.
+  SORTABLE_COLUMNS = %w[title department location type created_at].freeze
+
   def list
-    ds = model.order(Sequel.desc(:created_at), Sequel.desc(:id))
+    ds = model
     ds = ds.where(type: qs[:type]) if qs[:type].present?
     if qs[:search].present?
       term = "%#{qs[:search]}%"
@@ -17,7 +19,8 @@ class App::Services::JobOpenings < App::Services::Base
         Sequel.like(:location, term, case_insensitive: true)
       )
     end
-    return_success(ds.all.map(&:to_pos))
+    ds = apply_sort(ds, SORTABLE_COLUMNS, default: [[:created_at, :desc], [:id, :desc]])
+    paginated_response(ds)
   end
 
   # No archive/restore/status-transition concept (same as the mock's plain

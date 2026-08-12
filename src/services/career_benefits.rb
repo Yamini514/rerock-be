@@ -4,13 +4,16 @@ class App::Services::CareerBenefits < App::Services::Base
   # Mirrors lib/data/careers.js's benefits[]: no fixed sort order in the
   # mock, so newest-first same as JobOpenings. Search across title/
   # description only — no category/type concept for this resource.
+  SORTABLE_COLUMNS = %w[title created_at].freeze
+
   def list
-    ds = model.order(Sequel.desc(:created_at), Sequel.desc(:id))
+    ds = model
     if qs[:search].present?
       term = "%#{qs[:search]}%"
       ds = ds.where(Sequel.like(:title, term, case_insensitive: true) | Sequel.like(:description, term, case_insensitive: true))
     end
-    return_success(ds.all.map(&:to_pos))
+    ds = apply_sort(ds, SORTABLE_COLUMNS, default: [[:created_at, :desc], [:id, :desc]])
+    paginated_response(ds)
   end
 
   # No archive/restore/status-transition concept (same as the mock's plain

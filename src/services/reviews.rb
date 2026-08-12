@@ -6,11 +6,14 @@ class App::Services::Reviews < App::Services::Base
   # Admin moderation queue — approve/reject are just a `status` transition
   # riding the standard PUT/update below, same "no separate action route"
   # convention as Testimonials (services/testimonials.rb).
+  SORTABLE_COLUMNS = %w[stars status created_at].freeze
+
   def list
-    ds = model.order(Sequel.desc(:created_at), Sequel.desc(:id))
+    ds = model
     ds = ds.where(status: qs[:status]) if qs[:status].present?
     ds = ds.where(reviewable_type: qs[:reviewable_type]) if qs[:reviewable_type].present?
-    return_success(ds.all.map(&:to_pos))
+    ds = apply_sort(ds, SORTABLE_COLUMNS, default: [[:created_at, :desc], [:id, :desc]])
+    paginated_response(ds)
   end
 
   def self.fields

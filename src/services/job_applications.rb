@@ -7,11 +7,18 @@
 class App::Services::JobApplications < App::Services::Base
   def model; JobApplication; end
 
+  SORTABLE_COLUMNS = %w[name email created_at status].freeze
+
   def list
-    ds = model.order(Sequel.desc(:created_at))
+    ds = model
     ds = ds.where(status: qs[:status]) if qs[:status].present?
     ds = ds.where(job_opening_id: qs[:job_opening_id]) if qs[:job_opening_id].present?
-    return_success(ds.all.map(&:to_pos))
+    if qs[:search].present?
+      term = "%#{qs[:search]}%"
+      ds = ds.where(Sequel.like(:name, term, case_insensitive: true) | Sequel.like(:email, term, case_insensitive: true))
+    end
+    ds = apply_sort(ds, SORTABLE_COLUMNS, default: [[:created_at, :desc]])
+    paginated_response(ds)
   end
 
   # Only `status` is admin-editable — the candidate's own submitted details

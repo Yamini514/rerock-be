@@ -3,8 +3,17 @@ class App::Services::Agents < App::Services::Base
 
   # Mirrors lib/data/agents.js: search by name/email, plus exact filters for
   # status/territory.
+  #
+  # bookings/revenue/conversion_rate/leads_assigned/deals_closed are
+  # deliberately NOT in SORTABLE_COLUMNS — Agent#with_live_stats (below)
+  # recomputes those live from Deal/Lead on every read, overriding whatever
+  # stale value sits in the `agents` table's own same-named columns. Sorting
+  # by the stored column would silently disagree with the value actually
+  # shown in the UI.
+  SORTABLE_COLUMNS = %w[name territory rating status created_at].freeze
+
   def list
-    ds = model.order(Sequel.desc(:created_at))
+    ds = model
     ds = ds.where(status: qs[:status]) if qs[:status].present?
     ds = ds.where(territory: qs[:territory]) if qs[:territory].present?
     if qs[:search].present?
@@ -19,7 +28,8 @@ class App::Services::Agents < App::Services::Base
         Sequel.like(:name, term, case_insensitive: true) | Sequel.like(:email, term, case_insensitive: true)
       )
     end
-    return_success(ds.all.map(&:with_live_stats))
+    ds = apply_sort(ds, SORTABLE_COLUMNS, default: [[:created_at, :desc]])
+    paginated_response(ds) { |a| a.with_live_stats }
   end
 
   # See Base#get — overridden only to swap the plain to_pos for

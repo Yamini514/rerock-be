@@ -4,10 +4,16 @@
 class App::Services::NewsletterSubscribers < App::Services::Base
   def model; NewsletterSubscriber; end
 
+  SORTABLE_COLUMNS = %w[email created_at status].freeze
+
   def list
-    ds = model.order(Sequel.desc(:created_at))
+    ds = model
     ds = ds.where(status: qs[:status]) if qs[:status].present?
-    return_success(ds.all.map(&:to_pos))
+    if qs[:search].present?
+      ds = ds.where(Sequel.like(:email, "%#{qs[:search]}%", case_insensitive: true))
+    end
+    ds = apply_sort(ds, SORTABLE_COLUMNS, default: [[:created_at, :desc]])
+    paginated_response(ds)
   end
 
   def self.fields

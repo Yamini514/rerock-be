@@ -6,13 +6,16 @@ class App::Services::SeoPages < App::Services::Base
   # Search covers both `route` and `meta_title` (per the task's "search by
   # route/title") since an admin hunting for a page's SEO row is equally
   # likely to remember the path or the title, not just one of the two.
+  SORTABLE_COLUMNS = %w[route meta_title score created_at].freeze
+
   def list
-    ds = model.order(Sequel.desc(:created_at), Sequel.desc(:id))
+    ds = model
     if qs[:search].present?
       term = "%#{qs[:search]}%"
       ds = ds.where(Sequel.like(:route, term, case_insensitive: true) | Sequel.like(:meta_title, term, case_insensitive: true))
     end
-    return_success(ds.all.map(&:to_pos))
+    ds = apply_sort(ds, SORTABLE_COLUMNS, default: [[:created_at, :desc], [:id, :desc]])
+    paginated_response(ds)
   end
 
   # No archive/restore/status-transition concept (same as the mock's plain

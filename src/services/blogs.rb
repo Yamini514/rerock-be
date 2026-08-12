@@ -5,8 +5,12 @@ class App::Services::Blogs < App::Services::Base
   # Journal's own ordering cares about, same reasoning as Leads' recency
   # order), search by title OR category, plus an exact status filter for the
   # admin page's Draft/Published toggle.
+  # `author` is deliberately NOT sortable — it's a jsonb object
+  # ({name, role, avatar}), not a flat DB column `apply_sort` could order by.
+  SORTABLE_COLUMNS = %w[title category date created_at].freeze
+
   def list
-    ds = model.order(Sequel.desc(:date), Sequel.desc(:id))
+    ds = model
     ds = ds.where(status: qs[:status]) if qs[:status].present?
     if qs[:search].present?
       term = "%#{qs[:search]}%"
@@ -19,7 +23,8 @@ class App::Services::Blogs < App::Services::Base
         Sequel.like(:title, term, case_insensitive: true) | Sequel.like(:category, term, case_insensitive: true)
       )
     end
-    return_success(ds.all.map(&:to_pos))
+    ds = apply_sort(ds, SORTABLE_COLUMNS, default: [[:date, :desc], [:id, :desc]])
+    paginated_response(ds)
   end
 
   # No archive/restore concept here (same as Leads/Blogs' own mock — just a

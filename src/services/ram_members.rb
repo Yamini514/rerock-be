@@ -3,8 +3,16 @@ class App::Services::RamMembers < App::Services::Base
 
   # Mirrors lib/data/staff.js's ramTeam: search by name/email, plus exact
   # filters for status/region.
+  #
+  # `clientsManaged`/`portfolioValue` (the admin list page's other two
+  # sortable columns) are deliberately NOT here — they aren't real columns
+  # on this table at all, just client-computed joins against Clients'
+  # invested_properties. Sorting on them would need a new aggregate query;
+  # out of scope for this pass, so those two stay display-only/client-sorted.
+  SORTABLE_COLUMNS = %w[name email designation region status created_at].freeze
+
   def list
-    ds = model.order(Sequel.desc(:created_at))
+    ds = model
     ds = ds.where(status: qs[:status]) if qs[:status].present?
     ds = ds.where(region: qs[:region]) if qs[:region].present?
     if qs[:search].present?
@@ -18,7 +26,8 @@ class App::Services::RamMembers < App::Services::Base
         Sequel.like(:name, term, case_insensitive: true) | Sequel.like(:email, term, case_insensitive: true)
       )
     end
-    return_success(ds.all.map(&:to_pos))
+    ds = apply_sort(ds, SORTABLE_COLUMNS, default: [[:created_at, :desc]])
+    paginated_response(ds)
   end
 
   # Admin-invite path — second way to get a RAM account, alongside the
