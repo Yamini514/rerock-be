@@ -21,7 +21,13 @@ class App::Services::Communities < App::Services::Base
     # Opt-in: same non-breaking contract as Properties#list — no `page`
     # param means the exact bare-array response every existing caller
     # already gets.
-    paginated_response(ds)
+    stats = community_stats
+    paginated_response(ds) { |c| c.to_pos.merge(stats[c.id] || default_stats) }
+  end
+
+  def get
+    stats = community_stats(item.id)
+    return_success(item.to_pos.merge(stats[item.id] || default_stats))
   end
 
   # Archive/restore (archiveCommunity/restoreCommunity in the mock) and the
@@ -38,7 +44,7 @@ class App::Services::Communities < App::Services::Base
   def self.fields
     {
       save: [
-        :slug, :name, :type, :builder_id, :area_id, :location_id, :tagline, :status,
+        :slug, :name, :builder_id, :area_id, :location_id, :tagline, :status, :rera_status,
         :featured, :trending, :homepage_visibility, :rera, :price_min, :price_max,
         :unit_types, :total_units, :available_units, :possession, :investment_score,
         :growth_pct, :last_price_update, :hero_image, :gallery, :overview, :master_plan,
@@ -101,6 +107,40 @@ class App::Services::Communities < App::Services::Base
   end
 
   private
+
+  def default_stats
+    { 'rating' => 0, 'review_count' => 0, 'property_count' => 0 }
+  end
+
+  # A community's rating is derived, not stored — real buyers review the
+  # specific community they bought into (see services/client_reviews.rb's
+  # `owns?`), so `rating`/`review_count` are the average/count of every
+  # Approved review with `reviewable_type: 'Community'`. `property_count` is
+  # what the frontend uses to block deleting a community that still has
+  # properties attached (same "reassign first" UX as Areas/Builders). Pass
+  # `community_id` to scope to a single community (`get`); omit it to
+  # compute every community at once (`list`), same "group once, merge into
+  # each row" convention as Areas#stats_by_area / Builders#builder_stats.
+  def community_stats(community_id = nil)
+    reviews = Review.where(reviewable_type: 'Community', status: 'Approved')
+    reviews = reviews.where(reviewable_id: community_id) if community_id
+    stars_by_community = Hash.new { |h, k| h[k] = [] }
+    reviews.select(:reviewable_id, :stars).each { |r| stars_by_community[r.reviewable_id] << r.stars }
+
+    property_scope = Property.where(archived: false)
+    property_scope = property_scope.where(community_id: community_id) if community_id
+    property_counts = property_scope.group_and_count(:community_id).as_hash(:community_id, :count)
+
+    community_ids = (stars_by_community.keys + property_counts.keys).uniq
+    community_ids.each_with_object({}) do |id, out|
+      stars = stars_by_community[id] || []
+      out[id] = {
+        'rating' => stars.empty? ? 0 : (stars.sum.to_f / stars.size).round(1),
+        'review_count' => stars.size,
+        'property_count' => property_counts[id] || 0,
+      }
+    end
+  end
 
   def record_price_history!(community, change_type:, notes: nil)
     PriceHistory.create(
