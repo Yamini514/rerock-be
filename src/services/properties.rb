@@ -32,7 +32,12 @@ class App::Services::Properties < App::Services::Base
     if qs[:min_price].present? && qs[:max_price].present?
       ds = ds.where(price: qs[:min_price].to_i..qs[:max_price].to_i)
     end
-    ds = ds.where(rera: true) if qs[:rera].to_s == 'true'
+    # RERA lives on Community now (rera_status/rera — see
+    # models/community.rb), not on Property, so "RERA Approved" is
+    # expressed as a subquery the same way min_investment_score already is.
+    if qs[:rera].to_s == 'true'
+      ds = ds.where(community_id: Community.where(rera_status: 'Approved').select(:id))
+    end
     if qs[:min_investment_score].present? && qs[:min_investment_score].to_i > 0
       score = qs[:min_investment_score].to_i
       ds = ds.where(community_id: Community.where(Sequel.expr(:investment_score) >= score).select(:id))
@@ -48,21 +53,42 @@ class App::Services::Properties < App::Services::Base
     paginated_response(ds)
   end
 
+  # `builder_id`/`area_id` are derived from the chosen Community (never
+  # trusted from the client) so a Property can't silently drift from its
+  # Community's real builder/area — Builder/Area are read-only, derived
+  # fields in PropertyForm.js precisely because this is enforced here.
+  # `price_per_sqft` is likewise always recomputed from `price`/
+  # `built_up_area` rather than accepted from the client.
+  def create
+    data = data_for(:save)
+    apply_community_derivations!(data)
+    compute_price_per_sqft!(data)
+    save(model.new(data))
+  end
+
   # Archive/restore (archiveProperty/restoreProperty), the featured toggle
   # (toggleFeatured), and quick status changes are all plain flips of a
-  # column, so they ride the standard PUT/update below — whitelisted like
-  # any other saveable field, same pattern as every other Property Catalog
-  # resource. `tag_ids`/`amenity_ids` are plain Postgres integer[] columns
-  # (same precedent as Community's `amenity_ids` in migrations/0011 /
+  # column, so they ride this update below — whitelisted like any other
+  # saveable field, same pattern as every other Property Catalog resource.
+  # `tag_ids`/`amenity_ids` are plain Postgres integer[] columns (same
+  # precedent as Community's `amenity_ids` in migrations/0011 /
   # services/communities.rb) — no join-table code needed here either.
+  def update(data = nil)
+    data ||= data_for(:save)
+    apply_community_derivations!(data)
+    compute_price_per_sqft!(data)
+    item.set_fields(data, data.keys)
+    save(item)
+  end
+
   def self.fields
     {
       save: [
         :slug, :title, :community_id, :builder_id, :area_id, :location_id, :property_type_id,
-        :status, :price, :price_per_sqft, :built_up_area, :land_area, :created_date,
-        :bedrooms, :bathrooms, :balconies, :facing, :floor, :rera,
-        :images, :highlights, :description, :floor_plans, :pricing_trend,
-        :agent_slug, :featured, :tag_ids, :amenity_ids, :investment_score, :advisor_notes,
+        :status, :price, :price_per_sqft, :built_up_area, :land_area,
+        :bedrooms, :bathrooms, :balconies, :facing, :floor,
+        :images, :highlights, :description, :floor_plans,
+        :agent_slug, :featured, :tag_ids, :amenity_ids, :advisor_notes,
         :sales_team, :publish_status, :publish_at, :seo, :videos, :tour_360, :virtual_tour,
         :documents, :archived,
         :code, :configuration, :unit_number, :offer_price, :booking_amount, :maintenance,
@@ -72,6 +98,29 @@ class App::Services::Properties < App::Services::Base
   end
 
   private
+
+  # Only touches builder_id/area_id when the payload actually sets/changes
+  # community_id (PropertyForm.js always sends it; a narrower partial
+  # update like the list page's quick-status-change or "Mark Featured"
+  # bulk action won't include it, and must leave builder_id/area_id alone).
+  def apply_community_derivations!(data)
+    return unless data.key?(:community_id) && data[:community_id].present?
+    community = Community[data[:community_id].to_i]
+    return unless community
+    data[:builder_id] = community.builder_id
+    data[:area_id] = community.area_id
+  end
+
+  # Only recomputes when the payload actually carries both price and
+  # built_up_area (again, PropertyForm.js always sends both; a narrower
+  # partial update that doesn't touch either one leaves the existing
+  # price_per_sqft alone rather than nulling it out).
+  def compute_price_per_sqft!(data)
+    return unless data.key?(:price) && data.key?(:built_up_area)
+    price = data[:price]
+    area = data[:built_up_area]
+    data[:price_per_sqft] = (price && area && area.to_f > 0) ? (price.to_f / area.to_f).round : nil
+  end
 
   def ids_from(raw)
     raw.to_s.split(',').map(&:strip).reject(&:empty?).map(&:to_i)
@@ -90,17 +139,17 @@ class App::Services::Properties < App::Services::Base
     [cond, plus_cond].compact.reduce(:|)
   end
 
-  # Mirrors the frontend's old client-side rule (PropertiesClient.js): a
-  # property matches on its own amenity_ids when it has any set, otherwise
-  # falls back to its community's amenity_ids. Expressed as a subquery
-  # against Community rather than a join, so the outer property dataset's
-  # column set/`.all.map(&:to_pos)` shape is untouched.
+  # A property matches on its own (property-specific extra) amenity_ids,
+  # OR its community's amenity_ids — additive/inherited, not an
+  # override-if-present. Expressed as a subquery against Community rather
+  # than a join, so the outer property dataset's column set/
+  # `.all.map(&:to_pos)` shape is untouched.
   def amenity_filter(ids)
     pg_ids = Sequel.pg_array(ids, :integer)
     matching_community_ids = Community.where(Sequel.pg_array_op(:amenity_ids).overlaps(pg_ids)).select(:id)
     Sequel.|(
       Sequel.pg_array_op(:amenity_ids).overlaps(pg_ids),
-      Sequel.&(Sequel.lit('cardinality(amenity_ids) = 0'), { community_id: matching_community_ids })
+      { community_id: matching_community_ids }
     )
   end
 end

@@ -30,6 +30,7 @@ class App::Services::Uploads < App::Services::Base
     'builder-documents' => 'builders/documents',
     'collection-cover' => 'collections/covers',
     'media-library' => 'media-library',
+    'area-image' => 'areas/images',
     # Admin (CRM) attaching a document to a client's record — a different
     # feature from the Client Portal's own self-service upload
     # (services/client_documents.rb), which stays on the base64 fallback
