@@ -44,6 +44,7 @@ class App::Services::AgentPortal < App::Services::Base
     deal.set_fields(allowed, allowed.keys)
     save(deal) do |o|
       o.ensure_commission_for_closure!
+      o.ensure_agent_commission_for_closure!
       o.notify_client_of_closure!
       return_success(o.to_pos)
     end

@@ -60,6 +60,7 @@ class App::Services::Deals < App::Services::Base
     item.set_fields(data, data.keys)
     save(item) do |o|
       o.ensure_commission_for_closure!
+      o.ensure_agent_commission_for_closure!
       o.notify_client_of_closure!
       return_success(o.to_pos)
     end

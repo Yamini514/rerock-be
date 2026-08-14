@@ -1,3 +1,5 @@
+require 'uri'
+
 class App::Models::Agent < Sequel::Model
   include BCrypt
 
@@ -6,6 +8,76 @@ class App::Models::Agent < Sequel::Model
   # resolving it to full Area records happens on the frontend by filtering
   # areasApi's list against the id array (admin) or the public areas browse
   # endpoint (Agent Portal — routes.rb's 'public' block).
+
+  # Platform default commission rate — matches the `commission_rate` column's
+  # own DB default (migrations/0019) and mirrors Deal::DEFAULT_COMMISSION_RATE_PCT's
+  # role for RAM: the value AgentAuth#register seeds a self-registered agent
+  # with, since Sequel validation (below) runs against in-memory attributes
+  # and never sees a column's DB-level default.
+  DEFAULT_COMMISSION_RATE_PCT = 1.5
+
+  PHONE_REGEXP = /\A[6-9]\d{9}\z/
+  NAME_REGEXP = /\A[A-Za-z][A-Za-z\s.'-]*\z/
+
+  # Role and Joined Date are no longer entered anywhere — not on the Admin
+  # Portal's Add/Edit Agent form, not on self-registration
+  # (AgentAuth#register used to set both explicitly; that duplicate logic is
+  # gone now that this hook covers every creation path). Every brand-new
+  # Agent gets `role: "Agent"` and `joined_date: today` stamped here, in
+  # before_validation (not before_create), specifically so they're already
+  # non-blank by the time #validate's presence checks run below — neither
+  # field is in services/agents.rb's save whitelist anymore, so this is the
+  # only place either ever gets set.
+  def before_validation
+    if new?
+      self.role = "Agent"
+      self.joined_date ||= Date.today
+    end
+    super
+  end
+
+  # Shaped exactly like RamMember#validate: fields that only the Admin
+  # Portal's create/edit form ever sets are guarded with
+  # `new? || column_changed?(:field)` rather than firing unconditionally —
+  # this is what lets a plain status-only PUT (the list page's "Approve"
+  # action, or AgentDetailClient's Activate/Deactivate toggle) keep working
+  # on a legacy/self-registered record that predates this rule without ever
+  # touching the field it doesn't have; the moment someone actually edits
+  # that field, it has to resolve to a valid, non-blank value. Self-
+  # registration (AgentAuth#register) is a `new?` save too, so it seeds
+  # sensible defaults for territory/specialization/experience_years/
+  # commission_rate itself — see that method's own comment. No role/
+  # joined_date checks here — before_validation above guarantees both
+  # unconditionally on every new record, so there's nothing left to check.
+  def validate
+    super
+    validates_presence [:name, :email]
+    validates_unique(:email)
+    if name.present?
+      errors.add(:name, "can only contain letters, spaces, hyphens, apostrophes and periods") unless name.match?(NAME_REGEXP)
+      errors.add(:name, "must be 100 characters or less") if name.length > 100
+    end
+    errors.add(:email, "must be a valid email address") if email.present? && !email.match?(URI::MailTo::EMAIL_REGEXP)
+
+    if new? || column_changed?(:phone)
+      errors.add(:phone, "Can't be blank") if phone.blank?
+      errors.add(:phone, "must be a valid 10-digit phone number") if phone.present? && !phone.match?(PHONE_REGEXP)
+    end
+    if new? || column_changed?(:territory)
+      errors.add(:territory, "Can't be blank") if territory.blank?
+    end
+    if new? || column_changed?(:specialization)
+      errors.add(:specialization, "Can't be blank") if specialization.blank?
+    end
+    if new? || column_changed?(:experience_years)
+      errors.add(:experience_years, "Can't be blank") if experience_years.nil?
+      errors.add(:experience_years, "must be a positive number") if experience_years.present? && experience_years.to_i <= 0
+    end
+    if new? || column_changed?(:commission_rate)
+      errors.add(:commission_rate, "Can't be blank") if commission_rate.nil?
+      errors.add(:commission_rate, "must be between 0 and 100") if commission_rate.present? && !(0..100).cover?(commission_rate.to_f)
+    end
+  end
 
   # Same bcrypt-over-encoded_password shape as User/RamMember/Client — see
   # helpers/current_agent.rb for why this is its own copy, not a shared
@@ -95,30 +167,61 @@ class App::Models::Agent < Sequel::Model
   # with no documented distinction, and there's only one real "closed deals
   # for this agent" figure to derive from now.
   #
-  # commission_earned/pending_commission stay admin-set and are NOT computed
-  # here: the `commissions` table only ever gets a row for a referral-linked
-  # deal (Deal#ensure_commission_for_closure! requires referral_id), so
-  # there's no real per-agent commission ledger yet to derive them from —
-  # that gap is Phase 2, not this pass.
+  # commission_earned is now also computed live, from each closed deal's own
+  # stamped Deal#agent_commission_amount (set once, at the moment that deal
+  # first closed, by Deal#ensure_agent_commission_for_closure! — see that
+  # method) rather than the flat admin-typed `commission_earned` column or
+  # (as this used to do) the agent's *current* commission_rate applied
+  # retroactively to every past deal. That old approach meant editing an
+  # agent's commission_rate today silently rewrote every prior month's
+  # commission — the opposite of "changing the rate later shouldn't change
+  # historical commissions." A closed deal that predates this column (so
+  # `agent_commission_amount` is nil) falls back to the same current-rate
+  # estimate as before, purely so pre-existing data doesn't suddenly show
+  # ₹0 — every deal closed from here on gets a real stamped amount.
+  # pending_commission is now also computed live: the anticipated commission
+  # on this agent's still-open deals (any stage other than "Closed" —
+  # Opportunity/Proposal/Negotiation/Booking, see lib/data/deals.js's
+  # DEAL_STAGES) at the agent's *current* commission_rate. Unlike
+  # commission_earned above, there's nothing to "lock in" here — an open
+  # deal hasn't closed yet, so its anticipated commission should track the
+  # agent's current rate until the day it actually closes and gets stamped.
+  #
+  # rating is now also computed live, from this agent's own approved client
+  # reviews (Review#reviewable_type/#reviewable_id, same polymorphic shape
+  # Property/Builder/Community reviews use — see ReviewsSection.js's
+  # identical client-side average for the precedent this mirrors) rather
+  # than a flat admin-typed number; 0 with no reviews yet, same "no data yet"
+  # convention as conversion_rate below.
   def live_stats
     @live_stats ||= begin
       closed_deals = App::Models::Deal.where(agent_slug: slug, stage: 'Closed').all
+      open_deals = App::Models::Deal.where(agent_slug: slug).exclude(stage: 'Closed').all
       leads_count = App::Models::Lead.where(agent_slug: slug).count
       deals_count = closed_deals.size
       total_revenue = closed_deals.sum { |d| d.value || 0 }
       rate = commission_rate.to_f
 
+      deal_commission = ->(d) { d.agent_commission_amount || ((d.value.to_i * rate) / 100.0).round }
+      pending_commission = open_deals.sum { |d| (d.value.to_i * rate / 100.0).round }
+
       monthly = closed_deals
         .group_by { |d| (d.closing_date || d.created_at).strftime('%b %Y') }
         .sort_by { |_, deals| deals.map { |d| d.closing_date || d.created_at }.min }
-        .map { |month, deals| { 'month' => month, 'earned' => (deals.sum { |d| d.value.to_i } * rate / 100.0).round } }
+        .map { |month, deals| { 'month' => month, 'earned' => deals.sum { |d| deal_commission.call(d) } } }
+
+      approved_reviews = App::Models::Review.where(reviewable_type: 'Agent', reviewable_id: id, status: 'Approved').all
+      avg_rating = approved_reviews.empty? ? 0 : (approved_reviews.sum(&:stars).to_f / approved_reviews.size).round(1)
 
       {
         'leads_assigned' => leads_count,
         'bookings' => deals_count,
         'deals_closed' => deals_count,
         'revenue' => total_revenue,
+        'rating' => avg_rating,
+        'pending_commission' => pending_commission,
         'conversion_rate' => leads_count.zero? ? 0 : ((deals_count / leads_count.to_f) * 100).round(1),
+        'commission_earned' => closed_deals.sum { |d| deal_commission.call(d) },
         'commission_monthly' => monthly,
       }
     end
@@ -131,10 +234,9 @@ class App::Models::Agent < Sequel::Model
     to_pos.merge(live_stats)
   end
 
-  # Doubles as "activate my account" for an agent who has never set a
-  # password at all (encoded_password nil — the normal state right after an
-  # admin creates the record via /admin/agents) — see services/agent_auth.rb#login's
-  # comment on why there is no separate AgentAuth#register.
+  # Doubles as "activate my account" for a legacy agent who predates
+  # services/agents.rb#create's temp-password flow below and so still has
+  # no password at all (encoded_password nil).
   def send_password_reset_email(base_url)
     generate_reset_token!
 
@@ -166,6 +268,40 @@ class App::Models::Agent < Sequel::Model
     mail.deliver!
   end
 
+  # Admin-created account's first password (services/agents.rb#create) —
+  # same exact `mail` gem/SMTP infra and "email it instead of showing it in
+  # the admin UI" reasoning as RamMember#send_temporary_password_email/
+  # Client#send_temporary_password_email. The agent changes it afterward via
+  # the Agent Portal's own existing update-password flow
+  # (AgentAuth#update_password), which also clears must_change_password.
+  def send_temporary_password_email(temp_password)
+    agent_email = self.email
+    agent_name = self.name
+
+    mail = Mail.new do
+      from    'apps@srinishtha.com'
+      to      agent_email
+      subject 'Your REROCK Realty agent portal login'
+      html_part do
+        content_type 'text/html; charset=UTF-8'
+        body <<-HTML
+          <html>
+          <body>
+            <h1>Welcome to REROCK Realty</h1>
+            <p>Hello #{agent_name},</p>
+            <p>An account has been created for you on the REROCK Realty Agent Portal. Here is your temporary password:</p>
+            <p style="font-size: 22px; font-weight: bold; letter-spacing: 2px;">#{temp_password}</p>
+            <p>Please log in and change your password from your profile settings as soon as possible.</p>
+            <p>Thank you,<br/>REROCK Realty</p>
+          </body>
+          </html>
+        HTML
+      end
+    end
+
+    mail.deliver!
+  end
+
   # Shaped to match the Agent Portal's existing camelCase mock shape
   # (lib/data/agents.js) every portal page/component was written against —
   # same "shape the response to match what the existing frontend already
@@ -184,7 +320,7 @@ class App::Models::Agent < Sequel::Model
       'avatar' => avatar,
       'specialization' => specialization,
       'dealsClosed' => stats['deals_closed'],
-      'rating' => rating,
+      'rating' => stats['rating'],
       'experienceYears' => experience_years,
       'strongAreas' => strong_area_ids,
       'address' => address,
@@ -194,8 +330,8 @@ class App::Models::Agent < Sequel::Model
       'revenue' => stats['revenue'],
       'conversionRate' => stats['conversion_rate'],
       'commissionRate' => commission_rate,
-      'commissionEarned' => commission_earned,
-      'pendingCommission' => pending_commission,
+      'commissionEarned' => stats['commission_earned'],
+      'pendingCommission' => stats['pending_commission'],
       'leadsAssigned' => stats['leads_assigned'],
       'joinedDate' => joined_date,
       'commissionMonthly' => stats['commission_monthly'],
@@ -206,6 +342,7 @@ class App::Models::Agent < Sequel::Model
       'documents' => documents,
       'activityLog' => activity_log,
       'hasPassword' => !encoded_password.nil?,
+      'mustChangePassword' => must_change_password,
     }
   end
 end

@@ -39,8 +39,23 @@ class App::Services::AgentAuth < App::Services::Base
       name: name,
       email: email,
       phone: phone,
-      role: "Agent",
-      specialization: params[:specialization].presence,
+      # specialization/territory/experience_years/commission_rate are never
+      # collected on this form (specialization is the one exception it *can*
+      # pass, but doesn't require) — all four are seeded here purely so this
+      # record satisfies Agent#validate's mandatory-field checks immediately
+      # (same "seeded with the platform default" reasoning as
+      # RamAuth#register's own default_commission_rate). An admin can
+      # override any of them later from the Edit Agent form once this
+      # registration is approved. role/joined_date need no seeding here at
+      # all — Agent#before_validation stamps both automatically on every new
+      # record regardless of which path created it.
+      specialization: params[:specialization].presence || "General",
+      territory: params[:territory].presence || "Unassigned",
+      # Must be a positive number (Agent#validate) — 0 is no longer a valid
+      # default now that "Experience" means strictly greater than zero, so
+      # an unsupplied value seeds 1, not 0.
+      experience_years: params[:experience_years].presence&.to_i&.clamp(1, nil) || 1,
+      commission_rate: Agent::DEFAULT_COMMISSION_RATE_PCT,
       status: "Pending"
     )
     agent.password = password
@@ -132,6 +147,7 @@ class App::Services::AgentAuth < App::Services::Base
 
     if agent.encoded_password && agent.password == params[:current_password]
       agent.password = params[:new_password]
+      agent.must_change_password = false
       save(agent) { return_success("Password updated successfully.") }
     else
       return_errors!("Invalid current password.")
@@ -173,6 +189,7 @@ class App::Services::AgentAuth < App::Services::Base
       agent.password = new_password
       agent.reset_token = nil
       agent.reset_sent_at = nil
+      agent.must_change_password = false
       save(agent) { return_success('Password has been set.') }
     else
       return_errors!('Invalid or expired token.', 400)

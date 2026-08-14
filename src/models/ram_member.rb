@@ -1,17 +1,37 @@
 class App::Models::RamMember < Sequel::Model
   include BCrypt
 
-  # No many_to_one/self-FK needed. `builder_ids` is a plain integer[] column
-  # (like Agent#strong_area_ids / Property#tag_ids/#amenity_ids), not a Sequel
-  # association — resolving it to full Builder records happens on the
-  # frontend by filtering buildersApi's list against the id array (admin) or
-  # the new public builders browse endpoint (RAM Portal — see routes.rb's
-  # 'public' block, which reuses the existing Builders service as-is).
-
+  # Full Name/Email/Contact Number/Commission Rate are the RAM record's
+  # mandatory core fields. Contact number and commission rate aren't real
+  # columns (phone lives in profile_extra's jsonb, see #extract_phone;
+  # commission rate is the real `default_commission_rate` column) so their
+  # presence can't be expressed via `validates_presence`. Both checks are
+  # scoped to `new? || column_changed?(...)` rather than firing unconditionally
+  # on every save — this is what lets a plain status-only PUT (Approve/
+  # Activate/Deactivate, see services/ram_members.rb#update) keep working on
+  # a legacy record that predates this rule without ever having to touch the
+  # field it doesn't have; the moment someone actually edits that field, it
+  # has to resolve to a non-blank value.
   def validate
     super
     validates_presence [:name, :email]
     validates_unique(:email)
+
+    if new? || column_changed?(:default_commission_rate)
+      errors.add(:default_commission_rate, "Can't be blank") if default_commission_rate.nil?
+    end
+    if new? || column_changed?(:profile_extra)
+      errors.add(:phone, "Can't be blank") if extract_phone.blank?
+    end
+  end
+
+  def extract_phone
+    # jsonb columns come back as Sequel::Postgres::JSONBHash/JSONHash, not a
+    # plain Ruby Hash (`is_a?(Hash)` is false for both) — duck-type on `[]`
+    # instead so this works whether profile_extra was just assigned a plain
+    # Hash literal (pre-save) or round-tripped through the DB (post-save).
+    return nil unless profile_extra.respond_to?(:[])
+    profile_extra['phone'] || profile_extra[:phone]
   end
 
   # Same bcrypt-over-encoded_password shape as User#password/#password=
@@ -113,7 +133,6 @@ class App::Models::RamMember < Sequel::Model
       'email' => email,
       'avatar' => avatar,
       'designation' => designation,
-      'buildersHandled' => builder_ids,
       'region' => region,
       'dealsThisQuarter' => deals_this_quarter,
       'status' => status,

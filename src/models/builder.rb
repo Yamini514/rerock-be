@@ -17,7 +17,7 @@ class App::Models::Builder < Sequel::Model
       errors.add(:name, 'already exists') if dup.first
     end
 
-    if description.present? && description.strip.length < 10
+    if description && !description.strip.empty? && description.strip.length < 10
       errors.add(:description, 'must be at least 10 characters')
     end
 
@@ -26,7 +26,7 @@ class App::Models::Builder < Sequel::Model
       errors.add(:established, "must be between 1900 and #{current_year}")
     end
 
-    validates_format(EMAIL_REGEXP, :email, message: 'is not a valid email address') if email.present?
-    errors.add(:phone, 'must be a 10-digit phone number') if phone.present? && phone.gsub(/\D/, '').length != 10
+    validates_format(EMAIL_REGEXP, :email, message: 'is not a valid email address') if email && !email.strip.empty?
+    errors.add(:phone, 'must be a 10-digit phone number') if phone && !phone.strip.empty? && phone.gsub(/\D/, '').length != 10
   end
 end

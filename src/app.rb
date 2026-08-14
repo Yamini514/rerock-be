@@ -1,6 +1,7 @@
 require "dotenv/load"
 require "sequel"
 require "bundler/setup"
+require "active_support/all"
 require "bcrypt"
 require "logger"
 require "aws-sdk-s3"

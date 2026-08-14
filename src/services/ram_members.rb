@@ -97,7 +97,7 @@ class App::Services::RamMembers < App::Services::Base
   def self.fields
     {
       save: [
-        :slug, :name, :email, :avatar, :designation, :builder_ids, :region,
+        :slug, :name, :email, :avatar, :designation, :region,
         :status, :default_commission_rate, :profile_extra,
         :recommendations, :reports, :activities, :documents
       ]
