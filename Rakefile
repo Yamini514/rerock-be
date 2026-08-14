@@ -75,6 +75,15 @@ namespace :db do
   end
 end
 
+namespace :db do
+  desc "UAT reset: TRUNCATE every table (RESTART IDENTITY CASCADE) and reseed exactly 5 rows into each"
+  task :reset_and_reseed_uat do
+    App.load!
+    require './src/seeds/reset_and_reseed'
+    App::Seeds::ResetAndReseed.run!
+  end
+end
+
 
 # DATABASE_URL="postgres://doqhgpwk:faHZB60XTVMZTczxkznkvXC0rcHxyap6@rogue.db.elephantsql.com:5432/doqhgpwk" rake db:migrate\[0\]
 

@@ -25,9 +25,9 @@ class App::Models::Client < Sequel::Model
   def validate
     super
     validates_presence [:name, :email]
-    validates_format(EMAIL_REGEXP, :email, message: 'is not a valid email address') if email.present?
+    validates_format(EMAIL_REGEXP, :email, message: 'is not a valid email address') if email && !email.strip.empty?
     validates_unique(:email)
-    errors.add(:phone, 'must be a 10-digit phone number') if phone.present? && phone.gsub(/\D/, '').length != 10
+    errors.add(:phone, 'must be a 10-digit phone number') if phone && !phone.strip.empty? && phone.gsub(/\D/, '').length != 10
     if assigned_ram_id.present? && (new? || column_changed?(:assigned_ram_id)) && App::Models::RamMember.where(slug: assigned_ram_id).first.nil?
       errors.add(:assigned_ram_id, 'must match an existing RAM team member')
     end

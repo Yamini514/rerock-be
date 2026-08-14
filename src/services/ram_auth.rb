@@ -45,6 +45,12 @@ class App::Services::RamAuth < App::Services::Base
       designation: params[:designation].presence || "RAM",
       region: params[:region].presence || "Unassigned",
       status: "Pending",
+      # Commission rate is admin-configured, never self-picked at
+      # registration — seeded with the platform default (same fallback
+      # Deal#ensure_commission_for_closure! already uses) so this record
+      # satisfies RamMember#validate's mandatory check immediately, and an
+      # admin can override it later from the RAM Details Edit form.
+      default_commission_rate: Deal::DEFAULT_COMMISSION_RATE_PCT,
       profile_extra: { phone: phone, referralCode: params[:referral_code] }.compact
     )
     ram.password = password
@@ -105,7 +111,7 @@ class App::Services::RamAuth < App::Services::Base
   # KYC via profile_extra), and append to their own recommendations/
   # documents/activities arrays (same "frontend sends the whole array back,
   # already-appended" convention as everywhere else in this codebase) — but
-  # NOT their own status/builder_ids/revenue_managed/performance/
+  # NOT their own status/default_commission_rate/revenue_managed/performance/
   # satisfaction/renewal_rate/conversion_rate_pct/etc. — those stay
   # admin-managed-only (RamMembers, via /admin/ram) so a member can't
   # self-inflate their own KPIs. `email`/`experience_years` ARE included:

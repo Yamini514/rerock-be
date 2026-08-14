@@ -39,6 +39,32 @@ class App::Models::Deal < Sequel::Model
     commission.notify_ram_of_status!
   end
 
+  # Agent Network's per-agent analogue of the RAM commission hook above —
+  # same "call unconditionally after save, guard idempotently" convention
+  # (services/deals.rb#update), but stamps the rate/amount directly onto
+  # this deal (migrations/0075) instead of creating a row in a separate
+  # table, since there's no per-agent commission workflow to track, just the
+  # one rate/amount used at closure. `agent_commission_amount.present?`
+  # guards against ever overwriting an already-stamped deal — that's what
+  # makes a later change to the agent's own `commission_rate` not rewrite
+  # this deal's historical commission (see Agent#live_stats, which reads
+  # this stamped value instead of recomputing from the agent's current
+  # rate). Deliberately not also wired into Deals#create — same scope as
+  # `ensure_commission_for_closure!` above, which only fires from #update.
+  def ensure_agent_commission_for_closure!
+    return unless stage == 'Closed'
+    return if agent_slug.blank?
+    return if agent_commission_amount.present?
+
+    agent = App::Models::Agent.where(slug: agent_slug).first
+    return if agent.nil?
+
+    rate = agent.commission_rate.to_f
+    self.agent_commission_rate = rate
+    self.agent_commission_amount = (value.to_i * rate / 100.0).round
+    save_changes(validate: false)
+  end
+
   # Called after every save from both the admin (services/deals.rb#update)
   # and agent-portal (services/agent_portal.rb#update_my_deal) update paths
   # — same "call unconditionally after save, guard with an actual-change

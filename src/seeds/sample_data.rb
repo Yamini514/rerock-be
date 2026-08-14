@@ -233,33 +233,33 @@ module App
       PROPERTY_TYPES = [
         {
           slug: "apartment", name: "Apartment", description: "Multi-storey residential units within gated communities.",
-          icon: "Building2", banner: :building_modern_1, image: :building_modern_1, display_order: 1, colour: "#B3421C",
+          banner: :building_modern_1, image: :building_modern_1, display_order: 1,
           active: true, show_on_homepage: true, allow_search: true,
           seo: { title: "Apartments in Hyderabad", description: "Browse premium apartments across Hyderabad's top micro-markets." },
         },
         {
           slug: "villa", name: "Villa", description: "Independent or semi-independent houses with private land.",
-          icon: "Home", banner: :villa_exterior_1, image: :villa_exterior_1, display_order: 2, colour: "#B87A54",
+          banner: :villa_exterior_1, image: :villa_exterior_1, display_order: 2,
           active: true, show_on_homepage: true, allow_search: true,
           seo: { title: "Villas in Hyderabad", description: "Independent villas in gated communities across Hyderabad." },
         },
         {
           slug: "commercial", name: "Commercial", description: "Offices, retail spaces, and warehousing assets.",
-          icon: "Building", banner: :office_1, image: :office_1, display_order: 4, colour: "#3A5A78",
+          banner: :office_1, image: :office_1, display_order: 4,
           active: true, show_on_homepage: true, allow_search: true,
           seo: { title: "Commercial Properties in Hyderabad", description: "Grade A offices, retail, and warehousing in Hyderabad." },
         },
         {
           slug: "independent-house", name: "Independent House",
           description: "Standalone single-family homes, typically on smaller plots than a villa.",
-          icon: "Home", banner: :villa_exterior_2, image: :villa_exterior_2, display_order: 5, colour: "#6B5B95",
+          banner: :villa_exterior_2, image: :villa_exterior_2, display_order: 5,
           active: true, show_on_homepage: false, allow_search: true,
           seo: { title: "Independent Houses in Hyderabad", description: "Standalone homes across Hyderabad's growth corridors." },
         },
         {
           slug: "farmhouse", name: "Farmhouse",
           description: "Weekend and leisure homes on larger agricultural or semi-urban land parcels.",
-          icon: "TreePine", banner: :garden_1, image: :garden_1, display_order: 6, colour: "#4E7A51",
+          banner: :garden_1, image: :garden_1, display_order: 6,
           active: true, show_on_homepage: false, allow_search: true,
           seo: { title: "Farmhouses near Hyderabad", description: "Weekend farmhouses and leisure land near Hyderabad." },
         },
@@ -270,11 +270,9 @@ module App
           App::Models::PropertyType.find_or_create(slug: row[:slug]) do |t|
             t.name = row[:name]
             t.description = row[:description]
-            t.icon = row[:icon]
             t.banner = IMG[row[:banner]]
             t.image = IMG[row[:image]]
             t.display_order = row[:display_order]
-            t.colour = row[:colour]
             t.active = row[:active]
             t.show_on_homepage = row[:show_on_homepage]
             t.allow_search = row[:allow_search]
@@ -1038,20 +1036,6 @@ module App
         name.to_s.downcase.gsub(/[^a-z0-9]+/, "-").gsub(/\A-|-\z/, "")
       end
 
-      # RAM Members' `builder_ids` promotes the mock's short display names
-      # ("Brigade", "Prestige", "My Home"...) to real Builder ids. Builders'
-      # own `name` column is the long form ("Brigade Group", "My Home
-      # Group"...), so this resolves via a prefix ILIKE rather than an exact
-      # match — same "real DB query at the point of use" FK-resolution
-      # philosophy as every other lookup in this file.
-      def resolve_builder_ids_by_short_name(short_names)
-        short_names.flat_map do |short|
-          ids = App::Models::Builder.where(Sequel.ilike(:name, "#{short}%")).select_map(:id)
-          warn "[seed_ram_members!] no builder matched short name '#{short}'" if ids.empty?
-          ids
-        end.uniq
-      end
-
       # ---------------------------------------------------------------------
       # 10. Agents (frontend/lib/data/agents.js)
       # ---------------------------------------------------------------------
@@ -1256,7 +1240,7 @@ module App
       RAM_MEMBERS = [
         {
           mock_id: "ram1", name: "Deepak Suri", email: "deepak.s@rerockrealty.com", avatar: 33,
-          designation: "Senior RAM", builder_short_names: ["Brigade", "Prestige"], region: "West Hyderabad",
+          designation: "Senior RAM", region: "West Hyderabad", phone: "9848011101", default_commission_rate: 1.5,
           deals_this_quarter: 18, status: "Active", satisfaction: 4.6, renewal_rate: 88, avg_response_time_hours: 3,
           experience_years: 7, revenue_managed: 8_600_000, conversion_rate_pct: 74, referral_generated: 1_250_000,
           recommendations: [
@@ -1283,7 +1267,7 @@ module App
         },
         {
           mock_id: "ram2", name: "Neha Kapoor", email: "neha.k@rerockrealty.com", avatar: 41,
-          designation: "Senior RAM", builder_short_names: ["Sobha", "Lodha"], region: "Financial District",
+          designation: "Senior RAM", region: "Financial District", phone: "9848011102", default_commission_rate: 1.5,
           deals_this_quarter: 22, status: "Active", satisfaction: 4.8, renewal_rate: 92, avg_response_time_hours: 2,
           experience_years: 9, revenue_managed: 11_400_000, conversion_rate_pct: 81, referral_generated: 1_840_000,
           recommendations: [
@@ -1310,7 +1294,7 @@ module App
         },
         {
           mock_id: "ram3", name: "Manoj Pillai", email: "manoj.p@rerockrealty.com", avatar: 38,
-          designation: "RAM", builder_short_names: ["Aparna", "My Home"], region: "North Hyderabad",
+          designation: "RAM", region: "North Hyderabad", phone: "9848011103", default_commission_rate: 1.0,
           deals_this_quarter: 14, status: "Active", satisfaction: 4.4, renewal_rate: 81, avg_response_time_hours: 5,
           experience_years: 5, revenue_managed: 6_200_000, conversion_rate_pct: 68, referral_generated: 780_000,
           recommendations: [{ id: "r5", client: "Srinivas Rao", property: "Kondapur High-Street Retail", status: "Sent" }],
@@ -1336,15 +1320,14 @@ module App
 
       def seed_ram_members!
         RAM_MEMBERS.each do |row|
-          builder_ids = resolve_builder_ids_by_short_name(row[:builder_short_names])
-
           App::Models::RamMember.find_or_create(email: row[:email]) do |r|
             r.slug = slugify(row[:name])
             r.name = row[:name]
             r.avatar = avatar_url(row[:avatar])
             r.designation = row[:designation]
-            r.builder_ids = Sequel.pg_array(builder_ids, :integer)
             r.region = row[:region]
+            r.default_commission_rate = row[:default_commission_rate]
+            r.profile_extra = { phone: row[:phone] }
             r.deals_this_quarter = row[:deals_this_quarter]
             r.status = row[:status]
             r.satisfaction = row[:satisfaction]
