@@ -253,6 +253,13 @@ class App::Routes < Roda
             r.get { ClientSiteVisits[r].mine }
           end
 
+          # Logged-in-client "Download a Brochure/Plan" — see
+          # services/client_brochure_requests.rb (the guest counterpart is
+          # the public services/public_brochure_requests.rb).
+          r.on 'brochure-requests' do
+            r.post { ClientBrochureRequests[r].create }
+          end
+
           # Document upload — see services/client_documents.rb.
           r.on 'documents' do
             r.post { ClientDocuments[r].create }
@@ -402,6 +409,14 @@ class App::Routes < Roda
           do_crud(Communities, r, 'RL')
         end
 
+        # Real per-community price history for the "Pricing History" chart
+        # on the Community Details page — narrow read-only projection (no
+        # notes/changed_by/id) of the same price_histories ledger the admin
+        # Pricing tab manages. See services/public_price_histories.rb.
+        r.on 'price-histories' do
+          r.get { PublicPriceHistories[r].list }
+        end
+
         r.on 'areas' do
           do_crud(Areas, r, 'RL')
         end
@@ -494,6 +509,16 @@ class App::Routes < Roda
           r.post { PublicSiteVisits[r].create }
         end
 
+        # Public "Download a Brochure/Plan" lead-gate submission — creates a
+        # real Lead (source: "Brochure Download") tied to the community, same
+        # Lead-creation pattern as site-visits above (minus the SiteVisit
+        # half — a brochure request never books an appointment). See
+        # services/public_brochure_requests.rb. Logged-in clients skip this
+        # entirely via client-portal/me/brochure-requests instead.
+        r.on 'brochure-requests' do
+          r.post { PublicBrochureRequests[r].create }
+        end
+
         # Public Careers application submission — see
         # services/public_job_applications.rb.
         r.on 'job-applications' do
@@ -571,11 +596,14 @@ class App::Routes < Roda
           do_crud(Communities, r, 'CRUDL')
         end
 
-        # Read-only Community price-change ledger — see
-        # services/price_histories.rb. Rows are written only from
-        # Communities#update/#bulk_price_update, never directly.
+        # Community price-change ledger — see services/price_histories.rb.
+        # Most rows are still written only from Communities#update/
+        # #bulk_price_update, but C/U/D are now open to the admin Pricing
+        # tab's own manual "Price History" entries (change_type:
+        # 'manual-entry' only — the service itself blocks editing/deleting
+        # the real auto-logged rows).
         r.on 'price-histories' do
-          do_crud(PriceHistories, r, 'RL')
+          do_crud(PriceHistories, r, 'CRUDL')
         end
 
         r.on 'properties' do

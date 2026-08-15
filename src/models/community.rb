@@ -44,5 +44,31 @@ class App::Models::Community < Sequel::Model
     end
 
     errors.add(:investment_score, 'must be between 0 and 100') if investment_score && !investment_score.between?(0, 100)
+
+    validate_floor_plans
+  end
+
+  private
+
+  # `floor_plans` (migrations/0077) is a project-wide "explore by
+  # configuration" gallery, distinct from Property#floor_plans (a single
+  # listed unit's plan, unvalidated). Its `configuration` must be one of
+  # this same community's own `unit_types` — identical convention to
+  # Property#configuration's validation against the parent Community (see
+  # models/property.rb#validate_configuration) — so the admin UI can never
+  # offer/save a configuration the community hasn't actually declared.
+  def validate_floor_plans
+    return if floor_plans.blank?
+
+    floor_plans.each_with_index do |fp, i|
+      configuration = fp['configuration'] || fp[:configuration]
+      next if configuration.present? && (unit_types || []).include?(configuration)
+
+      if unit_types.blank?
+        errors.add(:floor_plans, "row #{i + 1}: configuration requires Unit Types to be set on this Community first")
+      else
+        errors.add(:floor_plans, "row #{i + 1}: configuration must be one of this Community's Unit Types: #{unit_types.join(', ')}")
+      end
+    end
   end
 end
