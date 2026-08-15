@@ -48,7 +48,8 @@ class App::Services::Communities < App::Services::Base
         :featured, :trending, :homepage_visibility, :rera, :price_min, :price_max,
         :unit_types, :total_units, :available_units, :possession, :investment_score,
         :growth_pct, :last_price_update, :hero_image, :gallery, :overview, :master_plan,
-        :amenity_ids, :pricing_trend, :nearby, :documents, :seo, :archived
+        :master_plan_image, :floor_plans, :amenity_ids, :pricing_trend, :nearby, :documents,
+        :seo, :archived
       ]
     }
   end
@@ -145,6 +146,7 @@ class App::Services::Communities < App::Services::Base
   def record_price_history!(community, change_type:, notes: nil)
     PriceHistory.create(
       community_id: community.id,
+      year: Date.today.year,
       price_min: community.price_min,
       price_max: community.price_max,
       growth_pct: community.growth_pct,

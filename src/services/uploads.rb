@@ -26,6 +26,8 @@ class App::Services::Uploads < App::Services::Base
     'property-documents' => 'properties/documents',
     'community-gallery' => 'communities/gallery',
     'community-documents' => 'communities/documents',
+    'community-master-plan' => 'communities/master-plan',
+    'community-floor-plans' => 'communities/floor-plans',
     'builder-logo' => 'builders/logos',
     'builder-documents' => 'builders/documents',
     'collection-cover' => 'collections/covers',
