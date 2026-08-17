@@ -16,6 +16,9 @@ class App::Services::ClientSiteVisits < App::Services::Base
     property_slug = params[:property_slug]&.strip
     property_title = params[:property_title]&.strip
     referral_code = params[:referral_code]&.strip
+    # BookVisitModal.js's client form didn't collect this at all before —
+    # same gap as the guest flow (services/public_site_visits.rb).
+    budget = params[:budget].present? ? params[:budget].to_i : 0
 
     return_errors!("Preferred date is required.", 400) if date.blank?
 
@@ -45,6 +48,7 @@ class App::Services::ClientSiteVisits < App::Services::Base
       source: link ? "Referral Link" : "Client Portal",
       priority: "Medium",
       status: "New",
+      budget: budget,
       timeline: [{ type: "Note", note: "Requested a site visit#{property_title.present? ? " for #{property_title}" : ""}.", date: Time.now.strftime("%Y-%m-%d") }]
     )
 

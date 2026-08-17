@@ -55,7 +55,15 @@ class App::Services::ClientAuth < App::Services::Base
     client.password = password
 
     save(client) do |o|
-      o.generate_and_send_otp!
+      # See Clients#create's identical rescue: the row is already committed
+      # by this point, so a slow/failed SMTP send must never turn into a
+      # false "registration failed" response.
+      begin
+        o.generate_and_send_otp!
+      rescue => e
+        App.logger.error("[ClientAuth#register] OTP email failed for client ##{o.id}: #{e.message}")
+        App.logger.error(e.backtrace)
+      end
       Notification.create(
         audience: "admin",
         type: "client",
@@ -98,7 +106,17 @@ class App::Services::ClientAuth < App::Services::Base
     return_errors!("No account found with that email.", 404) if client.nil?
     return_errors!("Already verified — you can sign in.", 400) if client.email_verified_at
 
-    client.generate_and_send_otp!
+    # Not wrapped by Base#save here (this call sits outside any `save`
+    # block), but `generate_and_send_otp!` still persists the new OTP to
+    # the client row before it sends mail — so the same rule applies: a
+    # slow/failed SMTP send must never turn into a false "resend failed"
+    # response for a code that was, in fact, already generated and saved.
+    begin
+      client.generate_and_send_otp!
+    rescue => e
+      App.logger.error("[ClientAuth#resend_otp] OTP email failed for client ##{client.id}: #{e.message}")
+      App.logger.error(e.backtrace)
+    end
     return_success("A new code has been sent to #{client.email}")
   end
 

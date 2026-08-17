@@ -55,6 +55,7 @@ class App::Services::Commissions < App::Services::Base
     item.set_fields(data, data.keys)
     save(item) do |o|
       o.notify_ram_of_status! if status_changing
+      o.sync_referral_payout_status! if status_changing
       return_success(o.to_pos)
     end
   end

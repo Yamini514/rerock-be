@@ -56,6 +56,30 @@ class App::Models::Commission < Sequel::Model
     )
   end
 
+  # Referral#payout_status ("whether the flat reward amount has actually
+  # been paid out to the RAM" — migrations/0057) and this Commission's own
+  # real, state-machine-governed `status` describe the same real-world
+  # payout event from two different tables, with nothing keeping them in
+  # sync — an admin marking a Commission PAID left the linked Referral's
+  # payout_status stuck at its default 'Pending' forever, so the RAM
+  # Portal/Admin Referrals list and the Commissions list could show
+  # contradictory info for the same payout. Called after every
+  # status-changing save (services/commissions.rb#update), same "explicit
+  # call after save, guarded by an actual-change check" convention as
+  # notify_ram_of_status! above. PAID is a terminal state (see
+  # ALLOWED_TRANSITIONS — nothing can move away from it once reached), so
+  # unlike Deal's property-status sync there's no reverse/reopen case to
+  # handle here.
+  def sync_referral_payout_status!
+    return unless status == 'PAID'
+    return if referral_id.nil?
+
+    ref = referral
+    return if ref.nil? || ref.payout_status == 'Paid'
+
+    ref.update(payout_status: 'Paid')
+  end
+
   private
 
   # Indian digit grouping (last 3 digits, then pairs) — matches the

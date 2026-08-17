@@ -24,6 +24,24 @@ class App::Models::Referral < Sequel::Model
     if agent_slug.present? && (new? || column_changed?(:agent_slug)) && App::Models::Agent.where(slug: agent_slug).first.nil?
       errors.add(:agent_slug, 'must match an existing agent')
     end
+
+    # `reward` is a flat, admin-entered amount with no state machine of its
+    # own (unlike Commission's real ALLOWED_TRANSITIONS) — nothing stopped
+    # it from being recorded while the referral was still sitting at
+    # Enquiry Stage/Site Visit Scheduled, before there was actually a sale
+    # to reward. Purchase Completed is the one stage that already means
+    # "the sale happened" (see notify_ram_of_status!'s own gate on this
+    # exact string), so that's the natural point a reward becomes valid.
+    # Scoped to `new? || column_changed?(:reward/:status)` so an unrelated
+    # edit to an already-existing referral with a legacy bad value doesn't
+    # suddenly start failing — same convention as the agent_slug check
+    # above. Moving a Purchase Completed referral's status back down (a
+    # correction/cancellation) is still allowed, but only once the reward
+    # is cleared too, since a nonzero reward on a non-completed referral is
+    # exactly the inconsistent state this guards against either way.
+    if reward.to_i != 0 && status != 'Purchase Completed' && (new? || column_changed?(:reward) || column_changed?(:status))
+      errors.add(:reward, 'can only be set once the referral reaches Purchase Completed')
+    end
   end
 
   # Called after every status-changing save from both write paths

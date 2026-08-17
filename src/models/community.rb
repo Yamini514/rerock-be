@@ -37,6 +37,10 @@ class App::Models::Community < Sequel::Model
     errors.add(:area_id, 'must reference an existing Area') if area_id && App::Models::Area[area_id].nil?
 
     errors.add(:total_units, 'must be greater than 0') if total_units && total_units <= 0
+    errors.add(:available_units, 'cannot be negative') if available_units && available_units < 0
+    if total_units && available_units && available_units > total_units && (new? || column_changed?(:total_units) || column_changed?(:available_units))
+      errors.add(:available_units, 'cannot be greater than Total Units')
+    end
     errors.add(:price_min, 'must be greater than 0') if price_min && price_min <= 0
     validates_operator(:>=, 0, :price_max) if price_max
     if price_min && price_max && price_max < price_min && (new? || column_changed?(:price_min) || column_changed?(:price_max))

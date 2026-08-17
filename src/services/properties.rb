@@ -13,7 +13,9 @@ class App::Services::Properties < App::Services::Base
   SORTABLE_COLUMNS = %w[title price created_at status].freeze
 
   def list
-    ds = model
+    # Eager-loaded so Property#to_pos's community&.rera_status merge doesn't
+    # fire one extra query per row on top of this dataset's own.
+    ds = model.eager(:community)
     ds = ds.where(archived: qs[:archived].to_s == 'true') if qs.key?(:archived)
     ds = ds.where(community_id: ids_from(qs[:community_id])) if qs[:community_id].present?
     ds = ds.where(builder_id: ids_from(qs[:builder_id])) if qs[:builder_id].present?

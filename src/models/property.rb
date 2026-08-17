@@ -5,6 +5,34 @@ class App::Models::Property < Sequel::Model
   many_to_one :location
   many_to_one :property_type
 
+  # Mirrors PropertyForm.js's own option lists. `STATUSES` is presence-
+  # required below (it lives on the same "basic" tab as title/community_id/
+  # etc., which are already unconditionally required, so requiring it too
+  # doesn't conflict with the form's progressive "Save & Next" saves).
+  # `FURNISHING_OPTIONS`/`PUBLISH_STATUSES` are enum-checked but NOT
+  # presence-required — both live on later tabs (Features/Publish) the
+  # admin hasn't necessarily reached yet by the time an earlier tab's
+  # "Save & Next" already persisted the row, and Furnishing is genuinely
+  # not applicable to a Land/Plot property type at all (see
+  # PropertyForm.js's own isLandType heuristic).
+  STATUSES = ['Available', 'Reserved', 'Sold', 'Under Construction', 'Ready To Move'].freeze
+  FURNISHING_OPTIONS = ['Unfurnished', 'Semi-Furnished', 'Fully Furnished'].freeze
+  PUBLISH_STATUSES = ['Draft', 'Published', 'Archived', 'Scheduled'].freeze
+
+  # RERA lives entirely on Community, not Property (migrations/0072/0073 —
+  # the old per-property `rera` boolean was dropped as a duplicate of
+  # Community's real rera_status/rera columns). Every frontend surface that
+  # shows a property's RERA badge (site/agent/RAM/portal cards, the client
+  # portal's property detail page) needs that status without each one
+  # having to separately fetch and join against the communities list, so
+  # it's merged onto the property response here — same "decorate to_pos
+  # with one merged extra" convention as Agent#with_live_stats/
+  # Client#with_status_history. `list`'s dataset eager-loads :community
+  # (see services/properties.rb) so this doesn't N+1 per row.
+  def to_pos
+    super.merge('community_rera_status' => community&.rera_status)
+  end
+
   # PropertyForm.js deliberately does NOT duplicate these checks
   # client-side (matching models/area.rb / models/builder.rb / models/
   # community.rb's approach) — this validate is the single source of
@@ -19,9 +47,13 @@ class App::Models::Property < Sequel::Model
   # without them, regardless of caller.
   def validate
     super
-    validates_presence [:title, :slug, :community_id, :builder_id, :area_id, :property_type_id, :price, :built_up_area],
+    validates_presence [:title, :slug, :community_id, :builder_id, :area_id, :property_type_id, :price, :built_up_area, :status],
                         message: 'is required'
     validates_unique :slug
+
+    errors.add(:status, "must be one of #{STATUSES.join(', ')}") if status.present? && !STATUSES.include?(status)
+    errors.add(:furnishing, "must be one of #{FURNISHING_OPTIONS.join(', ')}") if furnishing.present? && !FURNISHING_OPTIONS.include?(furnishing)
+    errors.add(:publish_status, "must be one of #{PUBLISH_STATUSES.join(', ')}") if publish_status.present? && !PUBLISH_STATUSES.include?(publish_status)
 
     if title && (new? || column_changed?(:title))
       dup = self.class.where(Sequel.function(:lower, :title) => title.strip.downcase)

@@ -69,6 +69,7 @@ class App::Services::Deals < App::Services::Base
     save(item) do |o|
       o.ensure_commission_for_closure!
       o.ensure_agent_commission_for_closure!
+      o.sync_property_status_for_stage!
       o.notify_client_of_closure!
       DealStatusHistory.create(deal_id: o.id, status: o.stage, changed_by: audit_changed_by, notes: params[:status_note].presence) if stage_changing
       return_success(o.with_status_history)

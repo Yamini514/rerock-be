@@ -405,7 +405,7 @@ class App::Routes < Roda
         end
 
         r.on 'builders' do
-          do_crud(Builders, r, 'RL')
+          do_crud(PublicBuilders, r, 'RL')
         end
 
         # Curated property groupings for the public site — see

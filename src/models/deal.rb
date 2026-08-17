@@ -83,6 +83,36 @@ class App::Models::Deal < Sequel::Model
     save_changes(validate: false)
   end
 
+  # Closing a Deal moves real inventory, but the linked Property's own
+  # `status` (Available/Reserved/Sold/...) was otherwise left for an admin
+  # to remember to flip by hand every single time — which the public site
+  # and Agent/RAM portals all read as gospel (Properties#list never
+  # excludes Sold from browsing/recommending) and which the Inventory
+  # report (services/reports.rb#inventory) counts live off this same
+  # column, so a forgotten manual flip silently corrupts both. Same "call
+  # unconditionally after save, guard by an actual stage change" convention
+  # as ensure_commission_for_closure!/notify_client_of_closure! below.
+  # Reopening a deal (moving it off Closed) reverts the property back to
+  # Available, but only if it's still exactly 'Sold' — i.e. still whatever
+  # this method itself set. An admin's own manual override to something
+  # else (e.g. Reserved for a different buyer in the meantime) is never
+  # clobbered by a reopened deal.
+  def sync_property_status_for_stage!
+    return unless column_changed?(:stage)
+    return if property_id.nil?
+
+    prop = property
+    return if prop.nil?
+
+    old_stage, new_stage = column_change(:stage)
+
+    if new_stage == 'Closed'
+      prop.update(status: 'Sold') unless prop.status == 'Sold'
+    elsif old_stage == 'Closed'
+      prop.update(status: 'Available') if prop.status == 'Sold'
+    end
+  end
+
   # Called after every save from both the admin (services/deals.rb#update)
   # and agent-portal (services/agent_portal.rb#update_my_deal) update paths
   # — same "call unconditionally after save, guard with an actual-change

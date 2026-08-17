@@ -50,7 +50,17 @@ class App::Services::Clients < App::Services::Base
     client.password = temp_password
     client.email_verified_at = Time.now
     save(client) do |obj|
-      obj.send_temporary_password_email(temp_password)
+      # Isolated from `save`'s own rescue on purpose: the client row is
+      # already committed by this point, so a slow/failed SMTP send must
+      # never turn into a false "client creation failed" response (it
+      # already succeeded). Same "never let a side-effect failure mask a
+      # real success" reasoning as write_audit_log!'s own internal rescue.
+      begin
+        obj.send_temporary_password_email(temp_password)
+      rescue => e
+        App.logger.error("[Clients#create] temp password email failed for client ##{obj.id}: #{e.message}")
+        App.logger.error(e.backtrace)
+      end
       obj.notify_of_agent_assignment!
       ClientStatusHistory.create(client_id: obj.id, status: obj.status, changed_by: audit_changed_by, notes: params[:status_note].presence)
       return_success(obj.with_status_history)

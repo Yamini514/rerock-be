@@ -3,6 +3,39 @@ class App::Models::SiteVisit < Sequel::Model
   many_to_one :property
   many_to_one :community
 
+  # Mirrors lib/data/siteVisits.js's SITE_VISIT_STATUSES / services/
+  # site_visits.rb#update's own comment ("Scheduled -> Completed/
+  # Cancelled/Rescheduled"), PLUS 'Pending' — the initial state
+  # services/public_site_visits.rb creates a guest-submitted visit request
+  # in, before an admin has confirmed it (not in the admin dropdown's own
+  # enum, since an admin never *sets* Pending by hand, but a real value this
+  # model must still accept on create). This model had NO validation at all
+  # before — a typo'd or malformed status saved silently, and since both
+  # hooks below key off an exact string match (`status == 'Completed'`,
+  # `%w[Cancelled Rescheduled Completed].include?(status)`), a bad value
+  # would quietly skip Deal auto-creation and the client notification with
+  # no error anywhere to explain why. Same "must be one of" convention as
+  # Community#status/Lead#status.
+  STATUSES = ['Pending', 'Scheduled', 'Completed', 'Cancelled', 'Rescheduled'].freeze
+
+  def validate
+    super
+    errors.add(:status, "must be one of #{STATUSES.join(', ')}") if status.present? && !STATUSES.include?(status)
+
+    # Nothing stopped a visit dated next week from being marked Completed
+    # today — which would also wrongly fire ensure_deal_for_completion!
+    # below for a visit that hasn't actually happened yet. Scoped to
+    # `new? || column_changed?(:status)` (same convention as Community's
+    # cross-field checks) so an unrelated edit to an already-Completed
+    # legacy row with a since-adjusted date doesn't suddenly start failing.
+    # A same-day visit is allowed to be marked Completed (the appointment
+    # may already be over by the time it's logged) — only a genuinely
+    # future date is rejected.
+    if status == 'Completed' && date.present? && date > Date.today && (new? || column_changed?(:status))
+      errors.add(:status, "can't be Completed for a site visit scheduled in the future")
+    end
+  end
+
   # Called after every save from both the admin (services/site_visits.rb)
   # and agent-portal (services/agent_portal.rb#update_my_site_visit) update
   # paths. Idempotent — the `Deal.where(site_visit_id: id).first` guard
