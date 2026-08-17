@@ -55,7 +55,7 @@ class App::Services::Referrals < App::Services::Base
     {
       save: [
         :ram_id, :type, :referrer, :referred, :status, :reward, :date, :payout_status, :archived,
-        :client_id, :property_id, :lead_id, :agent_slug
+        :client_id, :property_id, :community_id, :lead_id, :agent_slug
       ]
     }
   end

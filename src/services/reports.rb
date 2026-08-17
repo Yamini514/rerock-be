@@ -106,27 +106,27 @@ class App::Services::Reports < App::Services::Base
     by_agent = all_leads.select { |l| l.agent_slug.present? }.group_by(&:agent_slug)
       .map do |slug, rows|
         agent = Agent.where(slug: slug).first
-        won = rows.count { |l| l.status == 'Won' }
+        closed = rows.count { |l| l.status == 'Closed' }
         lost = rows.count { |l| l.status == 'Lost' }
         {
           id: agent&.id,
           agent_slug: slug,
           agent_name: agent&.name || slug,
           leads_handled: rows.size,
-          won: won,
+          closed: closed,
           lost: lost,
-          conversion_rate: rows.empty? ? 0 : ((won / rows.size.to_f) * 100).round(1)
+          conversion_rate: rows.empty? ? 0 : ((closed / rows.size.to_f) * 100).round(1)
         }
       end.sort_by { |r| -r[:leads_handled] }
 
     total = all_leads.size
-    won_total = all_leads.count { |l| l.status == 'Won' }
+    closed_total = all_leads.count { |l| l.status == 'Closed' }
     lost_total = all_leads.count { |l| l.status == 'Lost' }
     summary = {
       total_leads: total,
-      won: won_total,
+      closed: closed_total,
       lost: lost_total,
-      conversion_rate: total.zero? ? 0 : ((won_total / total.to_f) * 100).round(1)
+      conversion_rate: total.zero? ? 0 : ((closed_total / total.to_f) * 100).round(1)
     }
 
     return_success(by_status: by_status, by_source: by_source, by_agent: by_agent, summary: summary)

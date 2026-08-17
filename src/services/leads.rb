@@ -1,10 +1,25 @@
 class App::Services::Leads < App::Services::Base
   def model; Lead; end
 
+  # Statuses exempt from the 60-day auto-archive sweep below — a lead that's
+  # already reached a terminal state doesn't need "going stale" applied to it.
+  TERMINAL_STATUSES = ['Closed', 'Lost'].freeze
+
+  # Opportunistic sweep, not a cron job (this backend has no scheduler infra
+  # — see scripts/tasks.rb, which is just a Thor model-file generator). Runs
+  # on every admin read of the leads list, same "compute/apply live" spirit
+  # as FollowUp#with_overdue, except this one actually persists `archived`
+  # (the requirement is real auto-archiving, not just a display flag).
+  def sweep_expired_leads!
+    cutoff = Time.now - (Lead::VALIDITY_DAYS * 24 * 60 * 60)
+    model.where(archived: false).exclude(status: TERMINAL_STATUSES).where { created_at < cutoff }.update(archived: true)
+  end
+
   # Mirrors lib/data/leads.js: search by client name/phone, plus exact filters
   # for status/source/priority and the FKs, ordered newest-first (there's no
   # curated display_order for leads — recency is what matters here).
   def list
+    sweep_expired_leads!
     ds = model.order(Sequel.desc(:created_at))
     ds = ds.where(archived: qs[:archived].to_s == 'true') if qs.key?(:archived)
     ds = ds.where(status: qs[:status]) if qs[:status].present?
@@ -32,21 +47,27 @@ class App::Services::Leads < App::Services::Base
     # contract as Properties#list.
     if qs.key?(:page)
       total = ds.count
-      return_success(ds.limit(limit).offset(offset).all.map(&:to_pos), meta: { total: total, page: (qs[:page] || 1).to_i, page_size: page_size })
+      return_success(ds.limit(limit).offset(offset).all.map(&:with_status_history), meta: { total: total, page: (qs[:page] || 1).to_i, page_size: page_size })
     else
-      return_success(ds.all.map(&:to_pos))
+      return_success(ds.all.map(&:with_status_history))
     end
+  end
+
+  def get
+    return_success(item.with_status_history)
   end
 
   # Overridden (rather than left as Base#create) only to run
   # Lead#notify_agent_of_assignment! after a successful save — covers the
   # rarer case of a lead being entered with an agent already picked, same
   # as #update below covers the far more common "assign this existing
-  # enquiry to an agent" action.
+  # enquiry to an agent" action. Also writes the first `lead_status_histories`
+  # row — see #update's own comment for why this table exists at all.
   def create
     save(model.new(data_for(:save))) do |o|
       o.notify_agent_of_assignment!
-      return_success(o.to_pos)
+      LeadStatusHistory.create(lead_id: o.id, status: o.status, changed_by: audit_changed_by, notes: params[:status_note].presence)
+      return_success(o.with_status_history)
     end
   end
 
@@ -58,15 +79,23 @@ class App::Services::Leads < App::Services::Base
   # convention already used for Community#amenity_ids / Property#tag_ids,
   # just for a jsonb array of objects instead of an integer[] of ids — there's
   # no per-entry field whitelisting here, same as Property#floor_plans/
-  # #pricing_trend). Overridden only to run Lead#notify_agent_of_assignment!
-  # after a successful save.
+  # #pricing_trend). That jsonb column stays for freeform notes/events, but
+  # it's client-supplied and trusts the client to never drop an entry — not
+  # robust enough on its own for "never overwrite previous status history"
+  # with a guaranteed actor. `lead_status_histories` is the real, insert-only
+  # audit trail for status changes specifically: written here server-side
+  # (never trusting a client-supplied history row), same "compare the
+  # incoming value to the pre-save value" convention `agent_changing` below
+  # already uses.
   def update(data = nil)
     data ||= data_for(:save)
     agent_changing = data.key?(:agent_slug) && data[:agent_slug] != item.agent_slug
+    status_changing = data.key?(:status) && data[:status] != item.status
     item.set_fields(data, data.keys)
     save(item) do |o|
       o.notify_agent_of_assignment! if agent_changing
-      return_success(o.to_pos)
+      LeadStatusHistory.create(lead_id: o.id, status: o.status, changed_by: audit_changed_by, notes: params[:status_note].presence) if status_changing
+      return_success(o.with_status_history)
     end
   end
 
@@ -76,7 +105,8 @@ class App::Services::Leads < App::Services::Base
         :client_name, :client_phone, :client_email, :avatar,
         :property_id, :community_id, :area_id, :budget,
         :source, :priority, :status, :last_follow_up, :next_follow_up,
-        :agent_slug, :ram_id, :timeline, :archived
+        :agent_slug, :ram_id, :timeline, :archived,
+        :facing, :floor_range, :quality_score, :loan_percentage
       ]
     }
   end

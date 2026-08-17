@@ -1,6 +1,7 @@
 class App::Models::Referral < Sequel::Model
   many_to_one :client
   many_to_one :property
+  many_to_one :community
   many_to_one :lead
   many_to_one :referral_link
 

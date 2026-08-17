@@ -334,6 +334,7 @@ class App::Routes < Roda
 
           r.on 'clients' do
             r.get { AgentPortal[r].my_clients }
+            r.put(Integer) { |id| AgentPortal[r, id: id].update_my_client }
           end
 
           # Admin-assigned Follow Ups scoped to this agent (real agent_id

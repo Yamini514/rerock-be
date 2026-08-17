@@ -77,6 +77,7 @@ class App::Models::Agent < Sequel::Model
       errors.add(:commission_rate, "Can't be blank") if commission_rate.nil?
       errors.add(:commission_rate, "must be between 0 and 100") if commission_rate.present? && !(0..100).cover?(commission_rate.to_f)
     end
+    errors.add(:age, "must be less than 49") if age.present? && age.to_i >= 49
   end
 
   # Same bcrypt-over-encoded_password shape as User/RamMember/Client — see
@@ -319,6 +320,8 @@ class App::Models::Agent < Sequel::Model
       'whatsapp' => whatsapp,
       'avatar' => avatar,
       'specialization' => specialization,
+      'profession' => profession,
+      'age' => age,
       'dealsClosed' => stats['deals_closed'],
       'rating' => stats['rating'],
       'experienceYears' => experience_years,

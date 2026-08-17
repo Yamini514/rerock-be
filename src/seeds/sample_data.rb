@@ -250,17 +250,23 @@ module App
           seo: { title: "Commercial Properties in Hyderabad", description: "Grade A offices, retail, and warehousing in Hyderabad." },
         },
         {
+          # Inactive by default — Independent House is excluded from active
+          # property type options per the admin's current taxonomy (still
+          # kept as a real row, not deleted, since existing Property rows
+          # may already reference it).
           slug: "independent-house", name: "Independent House",
           description: "Standalone single-family homes, typically on smaller plots than a villa.",
           banner: :villa_exterior_2, image: :villa_exterior_2, display_order: 5,
-          active: true, show_on_homepage: false, allow_search: true,
+          active: false, show_on_homepage: false, allow_search: true,
           seo: { title: "Independent Houses in Hyderabad", description: "Standalone homes across Hyderabad's growth corridors." },
         },
         {
+          # Inactive by default — see the Independent House comment above;
+          # same reasoning applies to Farmhouse.
           slug: "farmhouse", name: "Farmhouse",
           description: "Weekend and leisure homes on larger agricultural or semi-urban land parcels.",
           banner: :garden_1, image: :garden_1, display_order: 6,
-          active: true, show_on_homepage: false, allow_search: true,
+          active: false, show_on_homepage: false, allow_search: true,
           seo: { title: "Farmhouses near Hyderabad", description: "Weekend farmhouses and leisure land near Hyderabad." },
         },
       ].freeze
@@ -1386,7 +1392,7 @@ module App
           mock_id: "LD-2101", client_name: "Karthik Iyer", client_phone: "+91 90140 22110",
           client_email: "karthik.iyer@example.com", avatar: 51,
           property_slug: "sobha-royal-crest-5bhk-villa", community_slug: "sobha-royal-crest", area_slug: "narsingi",
-          budget: 52_000_000, source: "Website", priority: "High", status: "Site Visit Scheduled",
+          budget: 52_000_000, source: "Website", priority: "High", status: "Site Visit",
           last_follow_up: "2026-07-15", next_follow_up: "2026-07-19", agent_slug: "rahul-sharma", ram_id: "ram2",
           timeline: [
             { date: "2026-07-08", event: "Lead created", note: "Enquired via website villa listing." },
@@ -1412,7 +1418,7 @@ module App
           mock_id: "LD-2103", client_name: "Rohit Malhotra", client_phone: "+91 90330 66778",
           client_email: "rohit.malhotra@example.com", avatar: 15,
           property_slug: "gachibowli-logistics-warehouse", community_slug: "lodha-evergreen", area_slug: "gachibowli",
-          budget: 42_000_000, source: "Referral", priority: "Medium", status: "Contacted",
+          budget: 42_000_000, source: "Referral", priority: "Medium", status: "Enquiry",
           last_follow_up: "2026-07-14", next_follow_up: "2026-07-21", agent_slug: "rahul-sharma", ram_id: "ram3",
           timeline: [
             { date: "2026-07-12", event: "Lead created", note: "Referred by Kiran Kumar Reddy." },
@@ -1423,7 +1429,7 @@ module App
           mock_id: "LD-2104", client_name: "Naveen Chandra", client_phone: "+91 90440 88991",
           client_email: "naveen.chandra@example.com", avatar: 17,
           property_slug: "brigade-horizon-3bhk-tower-a", community_slug: "brigade-horizon", area_slug: "kokapet",
-          budget: 12_800_000, source: "Website", priority: "Medium", status: "Won",
+          budget: 12_800_000, source: "Website", priority: "Medium", status: "Closed",
           last_follow_up: "2026-06-28", next_follow_up: nil, agent_slug: "priya-reddy", ram_id: "ram1",
           timeline: [
             { date: "2026-06-02", event: "Lead created", note: "Enquired about Tower A availability." },
@@ -1437,7 +1443,7 @@ module App
           mock_id: "LD-2105", client_name: "Swathi Nair", client_phone: "+91 90550 11002",
           client_email: "swathi.nair@example.com", avatar: 44,
           property_slug: "prestige-lakeside-3bhk", community_slug: "prestige-lakeside", area_slug: "tellapur",
-          budget: 16_800_000, source: "Walk-in", priority: "High", status: "Qualified",
+          budget: 16_800_000, source: "Walk-in", priority: "High", status: "Qualified Lead",
           last_follow_up: "2026-07-13", next_follow_up: "2026-07-22", agent_slug: "priya-reddy", ram_id: "ram1",
           timeline: [
             { date: "2026-07-06", event: "Lead created", note: "Walked into the Prestige Lakeside sales office." },
@@ -1461,7 +1467,7 @@ module App
           mock_id: "LD-2107", client_name: "Pooja Bhatt", client_phone: "+91 90770 55336",
           client_email: "pooja.bhatt@example.com", avatar: 48,
           property_slug: "kondapur-high-street-retail", community_slug: "my-home-avatar", area_slug: "kondapur",
-          budget: 8_200_000, source: "Website", priority: "Medium", status: "New",
+          budget: 8_200_000, source: "Website", priority: "Medium", status: "Enquiry",
           last_follow_up: nil, next_follow_up: "2026-07-20", agent_slug: "arjun-varma", ram_id: "ram3",
           timeline: [{ date: "2026-07-17", event: "Lead created", note: "Enquired about retail frontage availability." }],
         },
@@ -1469,7 +1475,7 @@ module App
           mock_id: "LD-2108", client_name: "Aditya Rane", client_phone: "+91 90880 77448",
           client_email: "aditya.rane@example.com", avatar: 13,
           property_slug: "gachibowli-logistics-warehouse", community_slug: "lodha-evergreen", area_slug: "gachibowli",
-          budget: 42_000_000, source: "Website", priority: "High", status: "Site Visit Scheduled",
+          budget: 42_000_000, source: "Website", priority: "High", status: "Site Visit",
           last_follow_up: "2026-07-16", next_follow_up: "2026-07-18", agent_slug: "arjun-varma", ram_id: "ram3",
           timeline: [
             { date: "2026-07-10", event: "Lead created", note: "Logistics firm scouting warehouse space." },
@@ -1481,7 +1487,7 @@ module App
           mock_id: "LD-2109", client_name: "Harini Suresh", client_phone: "+91 90990 99551",
           client_email: "harini.suresh@example.com", avatar: 43,
           property_slug: "aparna-zenon-2bhk", community_slug: "aparna-zenon", area_slug: "miyapur",
-          budget: 6_800_000, source: "Instagram", priority: "Medium", status: "Contacted",
+          budget: 6_800_000, source: "Instagram", priority: "Medium", status: "Enquiry",
           last_follow_up: "2026-07-12", next_follow_up: "2026-07-19", agent_slug: "arjun-varma", ram_id: "ram3",
           timeline: [
             { date: "2026-07-09", event: "Lead created", note: "Instagram enquiry — first-time buyer." },
@@ -1505,7 +1511,7 @@ module App
           mock_id: "LD-2111", client_name: "Lavanya Menon", client_phone: "+91 91002 44117",
           client_email: "lavanya.menon@example.com", avatar: 42,
           property_slug: "prestige-lakeside-3bhk", community_slug: "prestige-lakeside", area_slug: "tellapur",
-          budget: 17_200_000, source: "Website", priority: "Medium", status: "Won",
+          budget: 17_200_000, source: "Website", priority: "Medium", status: "Closed",
           last_follow_up: "2026-06-25", next_follow_up: nil, agent_slug: "sneha-rao", ram_id: "ram1",
           timeline: [
             { date: "2026-05-28", event: "Lead created", note: "Enquired about lake-facing units." },
@@ -1519,7 +1525,7 @@ module App
           mock_id: "LD-2112", client_name: "Yusuf Ali", client_phone: "+91 91003 66882",
           client_email: "yusuf.ali@example.com", avatar: 18,
           property_slug: "kondapur-high-street-retail", community_slug: "my-home-avatar", area_slug: "kondapur",
-          budget: 8_500_000, source: "Walk-in", priority: "Low", status: "New",
+          budget: 8_500_000, source: "Walk-in", priority: "Low", status: "Enquiry",
           last_follow_up: nil, next_follow_up: "2026-07-21", agent_slug: "sneha-rao", ram_id: "ram2",
           timeline: [{ date: "2026-07-17", event: "Lead created", note: "Walked in asking about retail unit sizes." }],
         },

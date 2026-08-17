@@ -23,6 +23,7 @@ class App::Models::RamMember < Sequel::Model
     if new? || column_changed?(:profile_extra)
       errors.add(:phone, "Can't be blank") if extract_phone.blank?
     end
+    errors.add(:age, "must be less than 49") if age.present? && age.to_i >= 49
   end
 
   def extract_phone
@@ -134,6 +135,8 @@ class App::Models::RamMember < Sequel::Model
       'avatar' => avatar,
       'designation' => designation,
       'region' => region,
+      'profession' => profession,
+      'age' => age,
       'dealsThisQuarter' => deals_this_quarter,
       'status' => status,
       'satisfaction' => satisfaction,

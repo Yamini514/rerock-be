@@ -3,6 +3,26 @@ class App::Models::Lead < Sequel::Model
   many_to_one :community
   many_to_one :area
   many_to_one :client
+  one_to_many :lead_status_histories
+
+  # A lead still open (not Closed/Lost) past this many days is auto-archived
+  # by services/leads.rb#sweep_expired_leads! — see that method's own comment.
+  VALIDITY_DAYS = 60
+
+  # Ordered, real audit trail of every status change — written server-side,
+  # insert-only (services/leads.rb#create/#update, services/agent_portal.rb#
+  # update_my_lead), never trusting a client-supplied history row. Distinct
+  # from #timeline below, which stays freeform/client-supplied.
+  def status_history
+    lead_status_histories_dataset.order(:created_at).all.map(&:to_pos)
+  end
+
+  # Read shape used everywhere a Lead is returned (services/leads.rb,
+  # services/agent_portal.rb) — same "merge computed data into to_pos"
+  # convention as FollowUp#with_overdue/Agent#with_live_stats.
+  def with_status_history
+    to_pos.merge('status_history' => status_history)
+  end
 
   # Called after every save from services/leads.rb — #create calls this
   # unconditionally (a lead entered with an agent already picked is always

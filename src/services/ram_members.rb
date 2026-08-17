@@ -98,6 +98,7 @@ class App::Services::RamMembers < App::Services::Base
     {
       save: [
         :slug, :name, :email, :avatar, :designation, :region,
+        :profession, :age,
         :status, :default_commission_rate, :profile_extra,
         :recommendations, :reports, :activities, :documents
       ]

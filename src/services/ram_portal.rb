@@ -85,15 +85,32 @@ class App::Services::RamPortal < App::Services::Base
     return_errors!("Not signed in.", 401) if ram.nil?
     return_errors!("Referred person's email address is required.", 400) if params[:client_email].blank?
 
+    # Referral Date and Time — defaults to now (same as before this field
+    # existed) when the form leaves it blank; rejects a future timestamp
+    # since a referral can't be logged before it happened.
+    referral_date = nil
+    if params[:date].present?
+      referral_date = begin
+        Time.parse(params[:date].to_s)
+      rescue ArgumentError, TypeError
+        nil
+      end
+      return_errors!("Enter a valid referral date and time.", 400) if referral_date.nil?
+      return_errors!("Referral date and time can't be in the future.", 400) if referral_date > Time.now
+    end
+
     lead, referral, property, agent_slug = create_referral_with_lead!(
       name: params[:referred]&.strip,
       phone: params[:client_phone]&.strip,
       email: params[:client_email]&.strip&.downcase,
       property_id: params[:property_id].presence,
+      community_id: params[:community_id].presence,
       ram_id: ram.slug,
       referrer_name: ram.name,
       type: "RAM Referral",
-      source: "RAM Referral"
+      source: "RAM Referral",
+      date: referral_date,
+      note: params[:notes]&.strip.presence
     )
 
     agent_note = property.present? && agent_slug.blank? ? " No agent is assigned to this property yet — assignment required." : ""

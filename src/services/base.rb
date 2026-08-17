@@ -259,7 +259,7 @@ class App::Services::Base
   # "first accepted referral owns the customer." A match with no active
   # referral links the new Lead/Referral to that real Client instead of
   # creating a duplicate contact.
-  def create_referral_with_lead!(name:, phone:, email:, property_id:, ram_id:, referrer_name:, type:, source:, referral_link_id: nil)
+  def create_referral_with_lead!(name:, phone:, email:, property_id:, ram_id:, referrer_name:, type:, source:, referral_link_id: nil, community_id: nil, date: nil, note: nil)
     return_errors!("Referred person's name is required.", 400) if name.blank?
     return_errors!("Referred person's phone number is required.", 400) if phone.blank?
 
@@ -300,11 +300,13 @@ class App::Services::Base
         client_phone: phone,
         client_email: email,
         property_id: property_id,
+        community_id: community_id,
         client_id: existing_client&.id,
         source: source,
         ram_id: ram_id,
         agent_slug: agent_slug,
-        status: "New"
+        status: "New",
+        timeline: note.present? ? [{ date: Date.today.to_s, event: "Lead created", note: note }] : []
       )
       unless lead.valid?
         validation_errors = lead.errors
@@ -319,12 +321,13 @@ class App::Services::Base
         referred: name,
         client_id: existing_client&.id,
         property_id: property_id,
+        community_id: community_id,
         lead_id: lead.id,
         agent_slug: agent_slug,
         referral_link_id: referral_link_id,
         status: "Enquiry Stage",
         reward: 0,
-        date: Date.today
+        date: date || Time.now
       )
       unless referral.valid?
         validation_errors = referral.errors

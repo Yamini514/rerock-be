@@ -54,13 +54,14 @@ class App::Services::AgentPortal < App::Services::Base
     agent = current_agent
     return_errors!("Not signed in.", 401) if agent.nil?
 
-    return_success(Lead.where(agent_slug: agent.slug).order(Sequel.desc(:created_at)).all.map(&:to_pos))
+    return_success(Lead.where(agent_slug: agent.slug).order(Sequel.desc(:created_at)).all.map(&:with_status_history))
   end
 
   # Stage/priority/follow-up edits and timeline appends — same "whole array
   # back, already-appended" convention as Leads#fields itself, minus the
   # FK-shaped fields (property_id/community_id/area_id/agent_slug/ram_id):
-  # reassignment stays an admin action.
+  # reassignment stays an admin action. Also writes a `lead_status_histories`
+  # row on a real status change — same pattern as services/leads.rb#update.
   def update_my_lead
     agent = current_agent
     return_errors!("Not signed in.", 401) if agent.nil?
@@ -70,8 +71,12 @@ class App::Services::AgentPortal < App::Services::Base
     return_errors!("This lead isn't assigned to you.", 403) unless lead.agent_slug == agent.slug
 
     allowed = params.slice(:status, :priority, :budget, :next_follow_up, :last_follow_up, :timeline)
+    status_changing = allowed.key?(:status) && allowed[:status] != lead.status
     lead.set_fields(allowed, allowed.keys)
-    save(lead) { |o| return_success(o.to_pos) }
+    save(lead) do |o|
+      LeadStatusHistory.create(lead_id: o.id, status: o.status, changed_by: agent.name, notes: params[:status_note].presence) if status_changing
+      return_success(o.with_status_history)
+    end
   end
 
   def my_site_visits
@@ -210,6 +215,25 @@ class App::Services::AgentPortal < App::Services::Base
     return_success(Client.where(assigned_agent_slug: agent.slug).order(Sequel.desc(:created_at)).all.map(&:to_pos))
   end
 
+  # Status/notes update for the agent's own Leads/Clients/Deals pipeline
+  # table (Agent Dashboard) — same "not reassigning who it's for, just moving
+  # it through the pipeline" reasoning as update_my_deal/update_my_lead
+  # above. `communication_log` is a plain jsonb array, whole-array-back like
+  # Lead#timeline (see services/clients.rb's own :communication_log
+  # whitelist) — no per-entry validation here either.
+  def update_my_client
+    agent = current_agent
+    return_errors!("Not signed in.", 401) if agent.nil?
+
+    client = Client[rp[:id]]
+    return_errors!("Client not found.", 404) if client.nil?
+    return_errors!("This client isn't assigned to you.", 403) unless client.assigned_agent_slug == agent.slug
+
+    allowed = params.slice(:status, :communication_log)
+    client.set_fields(allowed, allowed.keys)
+    save(client) { |o| return_success(o.to_pos) }
+  end
+
   # Documents uploaded by the agent's own assigned clients, awaiting the
   # agent's verification step (see services/client_documents.rb for the
   # upload side, services/approvals.rb for the admin-approval side that
@@ -260,25 +284,21 @@ class App::Services::AgentPortal < App::Services::Base
     end
   end
 
-  # Backs the Performance page (frontend's app/agent/(portal)/performance) —
-  # previously 100% mock data keyed by 4 hardcoded demo slugs
-  # (lib/data/performance.js), so it rendered blank for every real agent
-  # (`if (!performance || !summary) return null`). Two different data
-  # strategies, deliberately:
+  # Backs the Performance page (frontend's app/agent/(portal)/performance).
+  # Operational metrics only (Leads, Qualified Leads, Site Visits,
+  # Conversions, Deals, Follow-ups, Activities) — finance metrics
+  # (sales value, commission, client satisfaction) were dropped per spec.
   #
-  # `summary`'s YTD-labeled tiles (except commission_ytd) now read from
-  # Agent#live_stats — computed live from this agent's own real Leads/Deals
-  # (see that method's own comment for why commission_ytd is the one
-  # exception, still admin-set). These are lifetime-to-date totals, not
-  # actually reset every Jan 1 (no such column/reset job exists) — same
+  # `summary`'s YTD-labeled tiles read from Agent#live_stats plus this
+  # agent's own real Leads/SiteVisits/FollowUps — lifetime-to-date totals,
+  # not actually reset every Jan 1 (no such column/reset job exists) — same
   # caveat Reports#revenue already documents for its own numbers.
   #
-  # `monthly`, by contrast, has no backing column at all except
-  # commission_monthly — leads/deals/visits-by-month don't exist anywhere,
-  # mock or real — so it's computed on the fly from this agent's own
-  # Leads/Deals/SiteVisits, grouped by month in Ruby (same "group jsonb/rows
-  # in Ruby rather than raw SQL" style Reports#revenue already uses for its
-  # commission_monthly trend).
+  # `monthly`, by contrast, has no backing column at all — leads/deals/
+  # visits-by-month don't exist anywhere, mock or real — so it's computed on
+  # the fly from this agent's own Leads/Deals/SiteVisits, grouped by month in
+  # Ruby (same "group jsonb/rows in Ruby rather than raw SQL" style
+  # Reports#revenue already uses for its commission_monthly trend).
   def my_performance
     agent = current_agent
     return_errors!("Not signed in.", 401) if agent.nil?
@@ -286,55 +306,54 @@ class App::Services::AgentPortal < App::Services::Base
     leads = Lead.where(agent_slug: agent.slug).all
     closed_deals = Deal.where(agent_slug: agent.slug, stage: "Closed").all
     visits = SiteVisit.where(agent_slug: agent.slug).all
-    # Client-submitted, admin-approved ratings on this agent (see
-    # services/client_reviews.rb) — the only real source "client
-    # satisfaction" can come from; stars (1-5) scaled to a 0-100 score to
-    # match the mock's own percentage shape.
-    reviews = Review.where(reviewable_type: "Agent", reviewable_id: agent.id, status: "Approved").all
+    follow_ups = FollowUp.where(agent_id: agent.id).all
 
     leads_by_month = leads.group_by { |l| month_key(l.created_at) }
     deals_by_month = closed_deals.group_by { |d| month_key(d.closing_date || d.created_at) }
     visits_by_month = visits.group_by { |v| month_key(v.date || v.created_at) }
-    reviews_by_month = reviews.group_by { |r| month_key(r.created_at) }
+    follow_ups_by_month = follow_ups.group_by { |f| month_key(f.due_date || f.created_at) }
 
     monthly = last_six_months.map do |m|
       key = m.strftime("%Y-%m")
       month_leads = leads_by_month[key] || []
       month_deals = deals_by_month[key] || []
       month_visits = visits_by_month[key] || []
-      month_reviews = reviews_by_month[key] || []
+      month_follow_ups = follow_ups_by_month[key] || []
 
       leads_count = month_leads.size
       deals_count = month_deals.size
 
       {
         month: m.strftime("%b"),
-        revenue: month_deals.sum { |d| d.value || 0 },
         leads_generated: leads_count,
+        qualified_leads: month_leads.count { |l| l.status == "Qualified Lead" },
         deals_closed_count: deals_count,
         visits: month_visits.size,
+        follow_ups: month_follow_ups.size,
+        activities: month_leads.sum { |l| (l.timeline || []).size },
         # Derived, not stored — same "computed from real columns, documented
         # as an approximation" convention as Reports#revenue's implied_revenue.
         conversion_rate: leads_count.zero? ? 0 : ((deals_count / leads_count.to_f) * 100).round(1),
-        satisfaction: avg_satisfaction(month_reviews),
       }
     end
 
-    # Same ranking basis (revenue, desc) as Reports#commission's admin-wide
-    # table — just resolved down to "where does *this* agent land" instead of
-    # returning every agent's row. Ranked on live_stats' revenue (not the
-    # stored column) so this stays consistent with the summary tiles below.
-    ranked_slugs = Agent.all.sort_by { |a| -a.live_stats['revenue'] }.map(&:slug)
+    # Same ranking basis (deals closed, desc) as Reports#commission's
+    # admin-wide table — just resolved down to "where does *this* agent
+    # land" instead of returning every agent's row, and re-based on a real
+    # operational count now that revenue is no longer part of Performance.
+    ranked_slugs = Agent.all.sort_by { |a| -a.live_stats['deals_closed'] }.map(&:slug)
     rank = ranked_slugs.index(agent.slug)
 
     stats = agent.live_stats
     summary = {
       total_leads_ytd: stats['leads_assigned'],
+      qualified_leads_ytd: leads.count { |l| l.status == "Qualified Lead" },
+      site_visits_ytd: visits.size,
       avg_conversion_rate: stats['conversion_rate'],
       deals_closed_ytd: stats['deals_closed'],
-      total_sales_ytd: stats['revenue'],
-      commission_ytd: agent.commission_earned || 0,
-      client_satisfaction: avg_satisfaction(reviews),
+      follow_ups_total: follow_ups.size,
+      follow_ups_completed: follow_ups.count(&:done),
+      activities_ytd: leads.sum { |l| (l.timeline || []).size },
       monthly_ranking: rank.nil? ? nil : rank + 1,
     }
 
