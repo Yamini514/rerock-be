@@ -58,7 +58,15 @@ class App::Services::Agents < App::Services::Base
     obj.must_change_password = true
 
     save(obj) do |o|
-      o.send_temporary_password_email(temp_password)
+      # See Clients#create's identical rescue: the row is already committed
+      # by this point, so a slow/failed SMTP send must never turn into a
+      # false "agent creation failed" response.
+      begin
+        o.send_temporary_password_email(temp_password)
+      rescue => e
+        App.logger.error("[Agents#create] temp password email failed for agent ##{o.id}: #{e.message}")
+        App.logger.error(e.backtrace)
+      end
       return_success(o.with_live_stats.merge('tempPassword' => temp_password))
     end
   end

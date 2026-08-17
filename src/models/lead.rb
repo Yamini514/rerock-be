@@ -16,6 +16,14 @@ class App::Models::Lead < Sequel::Model
   # service-local constant) so both call sites share one definition.
   TERMINAL_STATUSES = ['Closed', 'Lost'].freeze
 
+  # The real funnel order (see services/ram_portal.rb's own "Enquiry ->
+  # Qualified Lead -> Site Visit -> Negotiation -> Agreement -> Closed"
+  # comment, matching lib/data/leads.js's LEAD_STATUSES). `Lost` is
+  # deliberately excluded — it's a terminal exit from the funnel, not a step
+  # within it, so moving to Lost is never treated as "backward" by the
+  # check below.
+  STAGE_ORDER = ['Enquiry', 'Qualified Lead', 'Site Visit', 'Negotiation', 'Agreement', 'Closed'].freeze
+
   # Ordered, real audit trail of every status change — written server-side,
   # insert-only (services/leads.rb#create/#update, services/agent_portal.rb#
   # update_my_lead), never trusting a client-supplied history row. Distinct
@@ -88,5 +96,17 @@ class App::Models::Lead < Sequel::Model
     validates_presence [:client_name, :client_phone]
     validates_format(EMAIL_REGEXP, :client_email, message: 'is not a valid email address') if client_email.present?
     errors.add(:client_phone, 'must be a 10-digit phone number') if client_phone.present? && client_phone.gsub(/\D/, '').length != 10
+
+    # A completed SiteVisit is a real, already-happened milestone — nothing
+    # stopped the lead's own status from being dragged back to Enquiry/
+    # Qualified Lead afterward, which would misrepresent the funnel (and
+    # under-report site-visit-stage-or-later counts on the Reports/Enquiries
+    # pages). Scoped to an actual status change on an existing lead — a
+    # brand-new lead can't yet have any site visits tied to its own id.
+    if !new? && column_changed?(:status) && STAGE_ORDER.include?(status) && STAGE_ORDER.index(status) < STAGE_ORDER.index('Site Visit')
+      if App::Models::SiteVisit.where(lead_id: id, status: 'Completed').first
+        errors.add(:status, "can't move back to #{status} — a site visit for this lead has already been completed")
+      end
+    end
   end
 end

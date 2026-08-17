@@ -49,7 +49,15 @@ class App::Services::RamMembers < App::Services::Base
     ram.must_change_password = true
 
     save(ram) do |o|
-      o.send_temporary_password_email(temp_password)
+      # See Clients#create's identical rescue: the row is already committed
+      # by this point, so a slow/failed SMTP send must never turn into a
+      # false "RAM member creation failed" response.
+      begin
+        o.send_temporary_password_email(temp_password)
+      rescue => e
+        App.logger.error("[RamMembers#create] temp password email failed for ram_member ##{o.id}: #{e.message}")
+        App.logger.error(e.backtrace)
+      end
       return_success(o.to_pos)
     end
   end
@@ -138,7 +146,15 @@ class App::Services::RamMembers < App::Services::Base
     ram.must_change_password = true
 
     save(ram) do |o|
-      o.send_temporary_password_email(temp_password)
+      # See Clients#create's identical rescue: the row is already committed
+      # by this point, so a slow/failed SMTP send must never turn into a
+      # false "reset failed" response.
+      begin
+        o.send_temporary_password_email(temp_password)
+      rescue => e
+        App.logger.error("[RamMembers#reset_password] temp password email failed for ram_member ##{o.id}: #{e.message}")
+        App.logger.error(e.backtrace)
+      end
       return_success('sent' => true)
     end
   end
