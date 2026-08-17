@@ -505,11 +505,13 @@ module App
       # =======================================================================
       RAM_MEMBERS_EXTRA = [
         { name: "Ritika Chawla", email: "ritika.c@rerockrealty.com", avatar: 22, designation: "RAM", region: "South Hyderabad",
-          phone: "9848011104", default_commission_rate: 1.25, deals_this_quarter: 10, status: "Active", satisfaction: 4.5,
+          phone: "9848011104", default_commission_rate: 1.25, profession: "Real Estate Advisor", date_of_birth: "1990-06-18",
+          deals_this_quarter: 10, status: "Active", satisfaction: 4.5,
           renewal_rate: 78, avg_response_time_hours: 4, experience_years: 4, revenue_managed: 4_800_000,
           conversion_rate_pct: 65, referral_generated: 520_000 },
         { name: "Sameer Joshi", email: "sameer.j@rerockrealty.com", avatar: 36, designation: "RAM", region: "East Hyderabad",
-          phone: "9848011105", default_commission_rate: 1.0, deals_this_quarter: 8, status: "Active", satisfaction: 4.3,
+          phone: "9848011105", default_commission_rate: 1.0, profession: "Real Estate Advisor", date_of_birth: "1993-11-05",
+          deals_this_quarter: 8, status: "Active", satisfaction: 4.3,
           renewal_rate: 74, avg_response_time_hours: 6, experience_years: 3, revenue_managed: 3_600_000,
           conversion_rate_pct: 60, referral_generated: 410_000 },
       ].freeze
@@ -524,6 +526,8 @@ module App
             r.designation = row[:designation]
             r.region = row[:region]
             r.default_commission_rate = row[:default_commission_rate]
+            r.profession = row[:profession]
+            r.date_of_birth = row[:date_of_birth]
             r.profile_extra = { phone: row[:phone] }
             r.deals_this_quarter = row[:deals_this_quarter]
             r.status = row[:status]

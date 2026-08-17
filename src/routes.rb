@@ -144,10 +144,19 @@ class App::Routes < Roda
             r.get { RamPortal[r].my_clients }
           end
 
-          # Create-only: capture a brand-new contact (no portal account yet)
-          # as a real Lead — see services/ram_portal.rb#create_my_lead.
+          # Capture a brand-new contact (no portal account yet) as a real
+          # Lead — see services/ram_portal.rb#create_my_lead — and read back
+          # this RAM's own Leads with their full status history
+          # (services/ram_portal.rb#my_leads).
           r.on 'leads' do
+            r.get { RamPortal[r].my_leads }
             r.post { RamPortal[r].create_my_lead }
+          end
+
+          # RAM Dashboard's finance-free stat tiles — see
+          # services/ram_portal.rb#my_stats.
+          r.on 'stats' do
+            r.get { RamPortal[r].my_stats }
           end
 
           # The RAM's own referral-program entries — see
@@ -179,6 +188,12 @@ class App::Routes < Roda
           # convention as my_referrals/my_clients above).
           r.on 'commissions' do
             r.get { RamPortal[r].my_commissions }
+          end
+
+          # Read-only — the RAM's own site visits (booked via their referral
+          # links/referrals) — see services/ram_portal.rb#my_site_visits.
+          r.on 'site-visits' do
+            r.get { RamPortal[r].my_site_visits }
           end
 
           # "Recommend Property" to one of the RAM's own assigned clients —

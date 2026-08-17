@@ -1247,6 +1247,7 @@ module App
         {
           mock_id: "ram1", name: "Deepak Suri", email: "deepak.s@rerockrealty.com", avatar: 33,
           designation: "Senior RAM", region: "West Hyderabad", phone: "9848011101", default_commission_rate: 1.5,
+          profession: "Real Estate Advisor", date_of_birth: "1988-04-12",
           deals_this_quarter: 18, status: "Active", satisfaction: 4.6, renewal_rate: 88, avg_response_time_hours: 3,
           experience_years: 7, revenue_managed: 8_600_000, conversion_rate_pct: 74, referral_generated: 1_250_000,
           recommendations: [
@@ -1274,6 +1275,7 @@ module App
         {
           mock_id: "ram2", name: "Neha Kapoor", email: "neha.k@rerockrealty.com", avatar: 41,
           designation: "Senior RAM", region: "Financial District", phone: "9848011102", default_commission_rate: 1.5,
+          profession: "Real Estate Advisor", date_of_birth: "1985-09-24",
           deals_this_quarter: 22, status: "Active", satisfaction: 4.8, renewal_rate: 92, avg_response_time_hours: 2,
           experience_years: 9, revenue_managed: 11_400_000, conversion_rate_pct: 81, referral_generated: 1_840_000,
           recommendations: [
@@ -1301,6 +1303,7 @@ module App
         {
           mock_id: "ram3", name: "Manoj Pillai", email: "manoj.p@rerockrealty.com", avatar: 38,
           designation: "RAM", region: "North Hyderabad", phone: "9848011103", default_commission_rate: 1.0,
+          profession: "Real Estate Advisor", date_of_birth: "1992-01-30",
           deals_this_quarter: 14, status: "Active", satisfaction: 4.4, renewal_rate: 81, avg_response_time_hours: 5,
           experience_years: 5, revenue_managed: 6_200_000, conversion_rate_pct: 68, referral_generated: 780_000,
           recommendations: [{ id: "r5", client: "Srinivas Rao", property: "Kondapur High-Street Retail", status: "Sent" }],
@@ -1333,6 +1336,8 @@ module App
             r.designation = row[:designation]
             r.region = row[:region]
             r.default_commission_rate = row[:default_commission_rate]
+            r.profession = row[:profession]
+            r.date_of_birth = row[:date_of_birth]
             r.profile_extra = { phone: row[:phone] }
             r.deals_this_quarter = row[:deals_this_quarter]
             r.status = row[:status]

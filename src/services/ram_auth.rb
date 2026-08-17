@@ -26,10 +26,17 @@ class App::Services::RamAuth < App::Services::Base
     email = params[:email]&.strip&.downcase
     phone = params[:phone]&.strip
     password = params[:password]
+    profession = params[:profession]&.strip
+    date_of_birth = begin
+      Date.parse(params[:date_of_birth].to_s)
+    rescue ArgumentError, TypeError
+      nil
+    end
 
-    return_errors!("Name, email, phone and password are required.", 400) if name.blank? || email.blank? || phone.blank? || password.blank?
+    return_errors!("Name, email, phone, profession, date of birth and password are required.", 400) if name.blank? || email.blank? || phone.blank? || profession.blank? || params[:date_of_birth].blank? || password.blank?
     return_errors!("Enter a valid email address.", 400) unless email.match?(URI::MailTo::EMAIL_REGEXP)
     return_errors!("Enter a valid 10-digit mobile number.", 400) unless phone.match?(PHONE_REGEXP)
+    return_errors!("Enter a valid date of birth.", 400) if date_of_birth.nil?
     return_errors!("Password must be at least 8 characters.", 400) if password.length < 8
     return_errors!("An account with this email already exists.", 400) if RamMember.where(email: email).first
 
@@ -45,6 +52,8 @@ class App::Services::RamAuth < App::Services::Base
       designation: params[:designation].presence || "RAM",
       region: params[:region].presence || "Unassigned",
       status: "Pending",
+      profession: profession,
+      date_of_birth: date_of_birth,
       # Commission rate is admin-configured, never self-picked at
       # registration — seeded with the platform default (same fallback
       # Deal#ensure_commission_for_closure! already uses) so this record
@@ -123,6 +132,7 @@ class App::Services::RamAuth < App::Services::Base
 
     allowed = params.slice(
       :name, :email, :avatar, :designation, :region, :experience_years,
+      :profession, :date_of_birth,
       :recommendations, :documents, :activities, :profile_extra
     )
 

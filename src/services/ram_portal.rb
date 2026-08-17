@@ -67,11 +67,60 @@ class App::Services::RamPortal < App::Services::Base
   # until now. `reward`/`payout_status` are admin-set (a RAM setting their
   # own commission would be a business-logic hole), so they're read-only
   # here — visible on `mine`, never writable via create/update below.
+  #
+  # Each row is decorated with its linked Lead's real funnel stage/history
+  # (Enquiry -> Qualified Lead -> Site Visit -> Negotiation -> Agreement ->
+  # Closed, see models/lead.rb) so the RAM can see the standard flow their
+  # referral is actually moving through, on top of the Referral's own
+  # simpler Enquiry Stage/Site Visit Scheduled/Purchase Completed/Cancelled
+  # status — reuses Lead#status_history as-is, no new history table.
   def my_referrals
     ram = current_ram
     return_errors!("Not signed in.", 401) if ram.nil?
 
-    return_success(Referral.where(ram_id: ram.slug).order(Sequel.desc(:created_at)).all.map(&:to_pos))
+    referrals = Referral.where(ram_id: ram.slug).order(Sequel.desc(:created_at)).all
+    return_success(
+      referrals.map do |referral|
+        lead = referral.lead_id ? Lead[referral.lead_id] : nil
+        row = referral.to_pos
+        row.merge('leadStatus' => lead&.status, 'leadStatusHistory' => lead&.status_history || [])
+      end
+    )
+  end
+
+  # Read-only view of the Leads this RAM has personally sourced (via
+  # create_my_referral/create_my_lead below) — same funnel/history as above,
+  # exposed as its own list for a full "my leads" view rather than only
+  # nested under referrals.
+  def my_leads
+    ram = current_ram
+    return_errors!("Not signed in.", 401) if ram.nil?
+
+    return_success(Lead.where(ram_id: ram.slug).order(Sequel.desc(:created_at)).all.map(&:with_status_history))
+  end
+
+  # RAM Dashboard's stat tiles — deliberately finance-free (contrast
+  # services/ram_members.rb#stats, the admin RAM Details page's equivalent,
+  # which includes revenue/commissionEarned). Every figure here is a plain
+  # count derived from real, already-scoped tables — no new business logic:
+  # `activeLeads` relies on the existing archived flag/TERMINAL_STATUSES
+  # (services/leads.rb#sweep_expired_leads! already keeps `archived` correct
+  # for the 60-day validity window), and `conversions` mirrors that same
+  # Lead funnel's terminal success state.
+  def my_stats
+    ram = current_ram
+    return_errors!("Not signed in.", 401) if ram.nil?
+
+    referral_ds = Referral.where(ram_id: ram.slug)
+    lead_ds = Lead.where(ram_id: ram.slug)
+
+    return_success(
+      'totalReferrals' => referral_ds.exclude(archived: true).count,
+      'activeLeads' => lead_ds.where(archived: false).exclude(status: Lead::TERMINAL_STATUSES).count,
+      'siteVisits' => SiteVisit.where(lead_id: lead_ds.select(:id)).count,
+      'clients' => referral_ds.exclude(client_id: nil).select(:client_id).distinct.count,
+      'conversions' => lead_ds.where(status: 'Closed').count
+    )
   end
 
   # "Refer a Client" — the RAM personally sourcing a new prospect into the
@@ -155,5 +204,21 @@ class App::Services::RamPortal < App::Services::Base
     return_errors!("Not signed in.", 401) if ram.nil?
 
     return_success(Commission.where(ram_id: ram.slug).order(Sequel.desc(:created_at)).all.map(&:to_pos))
+  end
+
+  # Read-only — the RAM's own site visits. `site_visits` has no `ram_id`
+  # column (only `agent_slug`, see migrations/0015), so this scopes through
+  # the visit's Lead instead — the same subquery `my_stats`' `siteVisits`
+  # count already uses (see #my_stats above). Status transitions
+  # (Scheduled/Completed/Cancelled/Rescheduled) stay agent/admin-only, same
+  # "the portal can see its own record but not run the visit" reasoning as
+  # my_commissions above.
+  def my_site_visits
+    ram = current_ram
+    return_errors!("Not signed in.", 401) if ram.nil?
+
+    return_success(
+      SiteVisit.where(lead_id: Lead.where(ram_id: ram.slug).select(:id)).order(Sequel.desc(:created_at)).all.map(&:to_pos)
+    )
   end
 end

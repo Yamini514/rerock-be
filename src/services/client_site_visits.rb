@@ -15,10 +15,24 @@ class App::Services::ClientSiteVisits < App::Services::Base
     time = params[:time]&.strip
     property_slug = params[:property_slug]&.strip
     property_title = params[:property_title]&.strip
+    referral_code = params[:referral_code]&.strip
 
     return_errors!("Preferred date is required.", 400) if date.blank?
 
     property = property_slug.present? ? Property.first(slug: property_slug) : nil
+
+    # A logged-in client can still be the same person who clicked a RAM's
+    # shared referral link this session (BookVisitModal.js sends the code
+    # regardless of login state) — attribute it the same way
+    # public_site_visits.rb does for guests, but best-effort: an invalid/
+    # inactive code, or a client who already has an active referral ("first
+    # accepted referral owns the customer" — see Base#create_referral_with_lead!),
+    # just means no Referral gets created. It never blocks the visit request
+    # itself, unlike the guest flow's hard 409 on a duplicate active referral.
+    link = referral_code.present? ? ReferralLink.where(code: referral_code, active: true).first : nil
+    if link && Referral.where(client_id: client.id, archived: false).exclude(status: ["Purchase Completed", "Cancelled"]).first
+      link = nil
+    end
 
     lead = Lead.new(
       client_id: client.id,
@@ -27,13 +41,35 @@ class App::Services::ClientSiteVisits < App::Services::Base
       client_email: client.email,
       property_id: property&.id,
       agent_slug: property&.agent_slug,
-      source: "Client Portal",
+      ram_id: link&.ram_id,
+      source: link ? "Referral Link" : "Client Portal",
       priority: "Medium",
       status: "New",
       timeline: [{ type: "Note", note: "Requested a site visit#{property_title.present? ? " for #{property_title}" : ""}.", date: Time.now.strftime("%Y-%m-%d") }]
     )
 
     save(lead) do |saved_lead|
+      if link
+        ram = RamMember.where(slug: link.ram_id).first
+        referral = Referral.new(
+          ram_id: link.ram_id,
+          type: "Referral Link",
+          referrer: ram&.name || "Referral Link",
+          referred: client.name,
+          client_id: client.id,
+          property_id: property&.id,
+          lead_id: saved_lead.id,
+          referral_link_id: link.id,
+          status: "Enquiry Stage",
+          reward: 0,
+          date: Time.now
+        )
+        if referral.valid?
+          referral.save(validate: false)
+          write_audit_log!(referral, true)
+        end
+      end
+
       visit = SiteVisit.new(
         lead_id: saved_lead.id,
         property_id: property&.id,
