@@ -23,7 +23,7 @@ class App::Services::AgentPortal < App::Services::Base
     agent = current_agent
     return_errors!("Not signed in.", 401) if agent.nil?
 
-    return_success(Deal.where(agent_slug: agent.slug).order(Sequel.desc(:created_at)).all.map(&:to_pos))
+    return_success(Deal.where(agent_slug: agent.slug).order(Sequel.desc(:created_at)).all.map(&:with_status_history))
   end
 
   # Stage moves (the Kanban board's inline stage Select) plus
@@ -41,12 +41,14 @@ class App::Services::AgentPortal < App::Services::Base
     return_errors!("This deal isn't assigned to you.", 403) unless deal.agent_slug == agent.slug
 
     allowed = params.slice(:stage, :probability, :value, :closing_date, :notes)
+    stage_changing = allowed.key?(:stage) && allowed[:stage] != deal.stage
     deal.set_fields(allowed, allowed.keys)
     save(deal) do |o|
       o.ensure_commission_for_closure!
       o.ensure_agent_commission_for_closure!
       o.notify_client_of_closure!
-      return_success(o.to_pos)
+      DealStatusHistory.create(deal_id: o.id, status: o.stage, changed_by: agent.name, notes: params[:status_note].presence) if stage_changing
+      return_success(o.with_status_history)
     end
   end
 
@@ -212,7 +214,7 @@ class App::Services::AgentPortal < App::Services::Base
     agent = current_agent
     return_errors!("Not signed in.", 401) if agent.nil?
 
-    return_success(Client.where(assigned_agent_slug: agent.slug).order(Sequel.desc(:created_at)).all.map(&:to_pos))
+    return_success(Client.where(assigned_agent_slug: agent.slug).order(Sequel.desc(:created_at)).all.map(&:with_status_history))
   end
 
   # Status/notes update for the agent's own Leads/Clients/Deals pipeline
@@ -230,8 +232,12 @@ class App::Services::AgentPortal < App::Services::Base
     return_errors!("This client isn't assigned to you.", 403) unless client.assigned_agent_slug == agent.slug
 
     allowed = params.slice(:status, :communication_log)
+    status_changing = allowed.key?(:status) && allowed[:status] != client.status
     client.set_fields(allowed, allowed.keys)
-    save(client) { |o| return_success(o.to_pos) }
+    save(client) do |o|
+      ClientStatusHistory.create(client_id: o.id, status: o.status, changed_by: agent.name, notes: params[:status_note].presence) if status_changing
+      return_success(o.with_status_history)
+    end
   end
 
   # Documents uploaded by the agent's own assigned clients, awaiting the

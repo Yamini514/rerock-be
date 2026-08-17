@@ -20,7 +20,11 @@ class App::Services::Deals < App::Services::Base
       term = "%#{qs[:search]}%"
       ds = ds.where(Sequel.like(:client_name, term, case_insensitive: true))
     end
-    return_success(ds.all.map(&:to_pos))
+    return_success(ds.all.map(&:with_status_history))
+  end
+
+  def get
+    return_success(item.with_status_history)
   end
 
   # client_name/property_name default from the linked Client/Property's own
@@ -46,7 +50,10 @@ class App::Services::Deals < App::Services::Base
       referral = Referral.where(client_id: data[:client_id]).exclude(status: ["Purchase Completed", "Cancelled"]).first
       data[:referral_id] = referral.id if referral
     end
-    save(model.new(data))
+    save(model.new(data)) do |o|
+      DealStatusHistory.create(deal_id: o.id, status: o.stage, changed_by: audit_changed_by, notes: params[:status_note].presence)
+      return_success(o.with_status_history)
+    end
   end
 
   # Stage moves (the Kanban board's inline stage Select) and probability/
@@ -57,12 +64,14 @@ class App::Services::Deals < App::Services::Base
   # SiteVisits#update's own ensure_deal_for_completion! call.
   def update(data = nil)
     data ||= data_for(:save)
+    stage_changing = data.key?(:stage) && data[:stage] != item.stage
     item.set_fields(data, data.keys)
     save(item) do |o|
       o.ensure_commission_for_closure!
       o.ensure_agent_commission_for_closure!
       o.notify_client_of_closure!
-      return_success(o.to_pos)
+      DealStatusHistory.create(deal_id: o.id, status: o.stage, changed_by: audit_changed_by, notes: params[:status_note].presence) if stage_changing
+      return_success(o.with_status_history)
     end
   end
 

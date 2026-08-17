@@ -11,6 +11,26 @@ class App::Models::Client < Sequel::Model
   # "which clients did this one refer".
   many_to_one :referred_by, class: self
   one_to_many :referrals, key: :referred_by_id, class: self
+  one_to_many :client_status_histories
+
+  # Ordered, real audit trail of every status change — written server-side,
+  # insert-only (services/clients.rb#create/#update, services/agent_portal.rb#
+  # update_my_client), never trusting a client-supplied history row. Same
+  # shape/reasoning as Lead#status_history; distinct from #communication_log,
+  # which stays freeform/client-supplied.
+  def status_history
+    client_status_histories_dataset.order(:created_at).all.map(&:to_pos)
+  end
+
+  # Read shape used by the Admin Portal (services/clients.rb) and Agent
+  # Portal (services/agent_portal.rb) — both already read Client via the
+  # generic `to_pos`, not the bespoke camelCase `as_pos` below (that one's
+  # reserved for the Client Portal's own login/session/profile flow, see
+  # services/client_auth.rb). Same "merge computed data into to_pos"
+  # convention as Lead#with_status_history/Deal#with_status_history.
+  def with_status_history
+    to_pos.merge('status_history' => status_history)
+  end
 
   EMAIL_REGEXP = /\A[^\s@]+@[^\s@]+\.[^\s@]+\z/
 

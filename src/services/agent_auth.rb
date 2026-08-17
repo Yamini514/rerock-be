@@ -27,10 +27,17 @@ class App::Services::AgentAuth < App::Services::Base
     email = params[:email]&.strip&.downcase
     phone = params[:phone]&.strip
     password = params[:password]
+    profession = params[:profession]&.strip
+    date_of_birth = begin
+      Date.parse(params[:date_of_birth].to_s)
+    rescue ArgumentError, TypeError
+      nil
+    end
 
-    return_errors!("Name, email, phone and password are required.", 400) if name.blank? || email.blank? || phone.blank? || password.blank?
+    return_errors!("Name, email, phone, profession, date of birth and password are required.", 400) if name.blank? || email.blank? || phone.blank? || profession.blank? || params[:date_of_birth].blank? || password.blank?
     return_errors!("Enter a valid email address.", 400) unless email.match?(URI::MailTo::EMAIL_REGEXP)
     return_errors!("Enter a valid 10-digit mobile number.", 400) unless phone.match?(PHONE_REGEXP)
+    return_errors!("Enter a valid date of birth.", 400) if date_of_birth.nil?
     return_errors!("Password must be at least 8 characters.", 400) if password.length < 8
     return_errors!("An account with this email already exists.", 400) if Agent.where(email: email).first
 
@@ -56,7 +63,16 @@ class App::Services::AgentAuth < App::Services::Base
       # an unsupplied value seeds 1, not 0.
       experience_years: params[:experience_years].presence&.to_i&.clamp(1, nil) || 1,
       commission_rate: Agent::DEFAULT_COMMISSION_RATE_PCT,
-      status: "Pending"
+      status: "Pending",
+      # Both mandatory on this form — checked explicitly above (same
+      # "explicit 400 before hitting the model" pattern as name/email/phone/
+      # password) rather than left to Agent#validate alone, so a blank
+      # profession/date_of_birth gets the same clear, field-specific message
+      # every other required field on this form already gets. Agent#age
+      # (derived from date_of_birth) is still re-checked for the <49 rule by
+      # Agent#validate on every save regardless of entry point.
+      profession: profession,
+      date_of_birth: date_of_birth
     )
     agent.password = password
     save(agent) do |o|
@@ -122,7 +138,7 @@ class App::Services::AgentAuth < App::Services::Base
     agent = CurrentAgent.agent_obj
     return_errors!("Not signed in.", 401) if agent.nil?
 
-    allowed = params.slice(:name, :email, :phone, :whatsapp, :avatar, :specialization, :address, :tasks, :attendance, :documents, :activity_log)
+    allowed = params.slice(:name, :email, :phone, :whatsapp, :avatar, :specialization, :profession, :date_of_birth, :address, :tasks, :attendance, :documents, :activity_log)
 
     if allowed[:email].present?
       new_email = allowed[:email].strip.downcase

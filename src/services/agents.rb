@@ -99,7 +99,7 @@ class App::Services::Agents < App::Services::Base
     {
       save: [
         :slug, :name, :email, :phone, :avatar,
-        :specialization, :experience_years, :profession, :age,
+        :specialization, :experience_years, :profession, :date_of_birth,
         :status, :territory, :commission_rate,
         :tasks, :attendance,
         :properties_sold, :properties_assigned, :documents, :activity_log

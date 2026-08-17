@@ -9,6 +9,13 @@ class App::Models::Lead < Sequel::Model
   # by services/leads.rb#sweep_expired_leads! — see that method's own comment.
   VALIDITY_DAYS = 60
 
+  # Statuses that end a lead's lifecycle — exempt from the 60-day
+  # auto-archive sweep (services/leads.rb#sweep_expired_leads!) and from the
+  # "does this phone already have an active lead" duplicate check below.
+  # Lives on the model (not services/leads.rb, where it used to be a
+  # service-local constant) so both call sites share one definition.
+  TERMINAL_STATUSES = ['Closed', 'Lost'].freeze
+
   # Ordered, real audit trail of every status change — written server-side,
   # insert-only (services/leads.rb#create/#update, services/agent_portal.rb#
   # update_my_lead), never trusting a client-supplied history row. Distinct
@@ -22,6 +29,19 @@ class App::Models::Lead < Sequel::Model
   # convention as FollowUp#with_overdue/Agent#with_live_stats.
   def with_status_history
     to_pos.merge('status_history' => status_history)
+  end
+
+  # Item 16 of the spec: a lead is only ever "active" while it's non-terminal
+  # and within its own 60-day validity window (same window
+  # sweep_expired_leads! auto-archives past) — an expired or Closed/Lost
+  # lead for the same phone number doesn't block a fresh enquiry. Used by
+  # services/leads.rb#create and services/ram_portal.rb#create_my_lead, the
+  # two real lead-creation entry points.
+  def self.duplicate_active?(phone)
+    return false if phone.blank?
+
+    cutoff = Time.now - (VALIDITY_DAYS * 24 * 60 * 60)
+    where(client_phone: phone, archived: false).exclude(status: TERMINAL_STATUSES).where { created_at > cutoff }.first ? true : false
   end
 
   # Called after every save from services/leads.rb — #create calls this

@@ -3,8 +3,26 @@ class App::Models::Deal < Sequel::Model
   many_to_one :property
   many_to_one :site_visit
   many_to_one :referral
+  one_to_many :deal_status_histories
 
   DEFAULT_COMMISSION_RATE_PCT = 1.0
+
+  # Ordered, real audit trail of every stage change — written server-side,
+  # insert-only (services/deals.rb#create/#update, services/agent_portal.rb#
+  # update_my_deal), never trusting a client-supplied history row. Same
+  # shape/reasoning as Lead#status_history/Client#status_history, keyed on
+  # this table's `stage` column rather than a `status` column. Distinct from
+  # #notes, which stays freeform/client-supplied.
+  def status_history
+    deal_status_histories_dataset.order(:created_at).all.map(&:to_pos)
+  end
+
+  # Read shape used everywhere a Deal is returned (services/deals.rb,
+  # services/agent_portal.rb) — same "merge computed data into to_pos"
+  # convention as Lead#with_status_history.
+  def with_status_history
+    to_pos.merge('status_history' => status_history)
+  end
 
   # Called after every save from both the admin (services/deals.rb#update)
   # and agent-portal (services/agent_portal.rb#update_my_deal) update paths

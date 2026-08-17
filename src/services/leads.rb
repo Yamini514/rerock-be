@@ -1,10 +1,6 @@
 class App::Services::Leads < App::Services::Base
   def model; Lead; end
 
-  # Statuses exempt from the 60-day auto-archive sweep below — a lead that's
-  # already reached a terminal state doesn't need "going stale" applied to it.
-  TERMINAL_STATUSES = ['Closed', 'Lost'].freeze
-
   # Opportunistic sweep, not a cron job (this backend has no scheduler infra
   # — see scripts/tasks.rb, which is just a Thor model-file generator). Runs
   # on every admin read of the leads list, same "compute/apply live" spirit
@@ -12,7 +8,7 @@ class App::Services::Leads < App::Services::Base
   # (the requirement is real auto-archiving, not just a display flag).
   def sweep_expired_leads!
     cutoff = Time.now - (Lead::VALIDITY_DAYS * 24 * 60 * 60)
-    model.where(archived: false).exclude(status: TERMINAL_STATUSES).where { created_at < cutoff }.update(archived: true)
+    model.where(archived: false).exclude(status: Lead::TERMINAL_STATUSES).where { created_at < cutoff }.update(archived: true)
   end
 
   # Mirrors lib/data/leads.js: search by client name/phone, plus exact filters
@@ -64,7 +60,10 @@ class App::Services::Leads < App::Services::Base
   # enquiry to an agent" action. Also writes the first `lead_status_histories`
   # row — see #update's own comment for why this table exists at all.
   def create
-    save(model.new(data_for(:save))) do |o|
+    data = data_for(:save)
+    return_errors!("An active lead for this phone number already exists.", 409) if Lead.duplicate_active?(data[:client_phone])
+
+    save(model.new(data)) do |o|
       o.notify_agent_of_assignment!
       LeadStatusHistory.create(lead_id: o.id, status: o.status, changed_by: audit_changed_by, notes: params[:status_note].presence)
       return_success(o.with_status_history)

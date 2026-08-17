@@ -26,10 +26,14 @@ class App::Services::Clients < App::Services::Base
 
     if qs.key?(:page)
       total = ds.count
-      return_success(ds.limit(limit).offset(offset).all.map(&:to_pos), meta: { total: total, page: (qs[:page] || 1).to_i, page_size: page_size })
+      return_success(ds.limit(limit).offset(offset).all.map(&:with_status_history), meta: { total: total, page: (qs[:page] || 1).to_i, page_size: page_size })
     else
-      return_success(ds.all.map(&:to_pos))
+      return_success(ds.all.map(&:with_status_history))
     end
+  end
+
+  def get
+    return_success(item.with_status_history)
   end
 
   # Every admin-created client gets a working client-portal login
@@ -48,7 +52,8 @@ class App::Services::Clients < App::Services::Base
     save(client) do |obj|
       obj.send_temporary_password_email(temp_password)
       obj.notify_of_agent_assignment!
-      return_success(obj.to_pos)
+      ClientStatusHistory.create(client_id: obj.id, status: obj.status, changed_by: audit_changed_by, notes: params[:status_note].presence)
+      return_success(obj.with_status_history)
     end
   end
 
@@ -63,6 +68,7 @@ class App::Services::Clients < App::Services::Base
   def update(data=nil)
     data ||= data_for(:save)
     agent_changing = data.key?(:assigned_agent_slug) && data[:assigned_agent_slug] != item.assigned_agent_slug
+    status_changing = data.key?(:status) && data[:status] != item.status
     item.set_fields(data, data.keys)
     save(item) do |obj|
       if agent_changing
@@ -77,7 +83,8 @@ class App::Services::Clients < App::Services::Base
           message: "Your account details were updated by our team."
         )
       end
-      return_success(obj.to_pos)
+      ClientStatusHistory.create(client_id: obj.id, status: obj.status, changed_by: audit_changed_by, notes: params[:status_note].presence) if status_changing
+      return_success(obj.with_status_history)
     end
   end
 

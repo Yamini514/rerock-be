@@ -77,7 +77,27 @@ class App::Models::Agent < Sequel::Model
       errors.add(:commission_rate, "Can't be blank") if commission_rate.nil?
       errors.add(:commission_rate, "must be between 0 and 100") if commission_rate.present? && !(0..100).cover?(commission_rate.to_f)
     end
-    errors.add(:age, "must be less than 49") if age.present? && age.to_i >= 49
+    if new? || column_changed?(:profession)
+      errors.add(:profession, "Can't be blank") if profession.blank?
+    end
+    if new? || column_changed?(:date_of_birth)
+      errors.add(:date_of_birth, "Can't be blank") if date_of_birth.nil?
+    end
+    errors.add(:date_of_birth, "must result in an age under 49") if date_of_birth.present? && age && age >= 49
+  end
+
+  # Derived from date_of_birth, not a stored/directly-typed column (see
+  # migrations/0086) — this is what #validate's "must result in an age under
+  # 49" check above reads, and what Agent#as_pos exposes as `age` to every
+  # existing caller (Admin Portal, Agent Portal) unchanged. nil when
+  # date_of_birth isn't set (a legacy record predating this rule).
+  def age
+    return nil if date_of_birth.nil?
+
+    today = Date.today
+    years = today.year - date_of_birth.year
+    years -= 1 if today.month < date_of_birth.month || (today.month == date_of_birth.month && today.day < date_of_birth.day)
+    years
   end
 
   # Same bcrypt-over-encoded_password shape as User/RamMember/Client — see
@@ -230,9 +250,11 @@ class App::Models::Agent < Sequel::Model
 
   # Admin read shape (services/agents.rb#list/#get/#update/#create) — to_pos
   # plus the live-computed fields above, same "to_pos.merge(...)" shape as
-  # FollowUp#with_overdue.
+  # FollowUp#with_overdue. `age` is merged in explicitly since it's a plain
+  # Ruby method now (derived from date_of_birth, migrations/0086), not a
+  # column — as_json/to_pos only serializes real columns on its own.
   def with_live_stats
-    to_pos.merge(live_stats)
+    to_pos.merge(live_stats).merge('age' => age)
   end
 
   # Doubles as "activate my account" for a legacy agent who predates
@@ -321,6 +343,7 @@ class App::Models::Agent < Sequel::Model
       'avatar' => avatar,
       'specialization' => specialization,
       'profession' => profession,
+      'dateOfBirth' => date_of_birth,
       'age' => age,
       'dealsClosed' => stats['deals_closed'],
       'rating' => stats['rating'],

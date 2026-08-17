@@ -32,6 +32,7 @@ class App::Services::RamPortal < App::Services::Base
     ram = current_ram
     return_errors!("Not signed in.", 401) if ram.nil?
     return_errors!("Email is required.", 400) if params[:client_email].blank?
+    return_errors!("An active lead for this phone number already exists.", 409) if Lead.duplicate_active?(params[:client_phone]&.strip)
 
     lead = Lead.new(
       client_name: params[:client_name]&.strip,
