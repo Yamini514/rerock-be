@@ -138,6 +138,7 @@ namespace :db do
 end
 
 
+
 # DATABASE_URL="postgres://doqhgpwk:faHZB60XTVMZTczxkznkvXC0rcHxyap6@rogue.db.elephantsql.com:5432/doqhgpwk" rake db:migrate\[0\]
 
 

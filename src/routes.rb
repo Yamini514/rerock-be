@@ -110,6 +110,15 @@ class App::Routes < Roda
         { status: 'success', version: 1 }
       end
 
+      # Public, unauthenticated file serving for real S3 uploads — see
+      # services/uploads.rb#file. Keyed by the upload's `uuid` (not its
+      # sequential `id`) specifically so this can stay reachable with no
+      # auth at all (the public site needs to render property/community
+      # images) without making every upload enumerable by looping
+      # id=1,2,3,.... Streams the object through from S3 server-side, so
+      # the bucket itself never needs a public-read policy.
+      r.get('uploads', String, 'file') { |uuid| Uploads[r, uuid: uuid].file }
+
       # RAM Portal — the self-service member portal's own auth (register/
       # login/forgot-password/reset-password), wholly separate from the
       # Admin Portal's `users`-based login above. RAM members aren't `users`
@@ -207,6 +216,13 @@ class App::Routes < Roda
             r.get('mine') { RamRecommendations[r].mine }
             r.put(Integer) { |id| RamRecommendations[r, id: id].update }
           end
+
+          # Real S3 upload for the RAM Portal's own profile avatar — see
+          # services/uploads.rb. Scoped to 'ram-avatar' only; a RAM token can
+          # never presign any other purpose (property images, etc.).
+          r.on 'uploads' do
+            r.post('presign') { Uploads[r].presign(allowed_purposes: %w[ram-avatar]) }
+          end
         end
       end
 
@@ -281,6 +297,14 @@ class App::Routes < Roda
           r.on 'documents' do
             r.post { ClientDocuments[r].create }
             r.get { ClientDocuments[r].mine }
+          end
+
+          # Real S3 upload for the Client Portal's own document upload
+          # (components/portal/UploadDocumentModal.js) — see
+          # services/uploads.rb. Scoped to 'client-documents' only; a client
+          # token can never presign any other purpose.
+          r.on 'uploads' do
+            r.post('presign') { Uploads[r].presign(allowed_purposes: %w[client-documents]) }
           end
 
           # Client's "Saved" (uncapped) and "Shortlist" (capped at 2,
@@ -386,6 +410,15 @@ class App::Routes < Roda
             r.put(Integer) { |id| AgentPortal[r, id: id].verify_my_document }
           end
 
+          # Real S3 upload for the Agent Portal's lead-documents tab
+          # (components/agent/leads/tabs/DocumentsTab.js) — see
+          # services/uploads.rb. Scoped to 'lead-documents' only; an agent
+          # token can never presign any other purpose (e.g. their own
+          # 'agent-documents' HR docs, which stay admin-only-uploaded).
+          r.on 'uploads' do
+            r.post('presign') { Uploads[r].presign(allowed_purposes: %w[lead-documents]) }
+          end
+
           # Performance page — YTD summary tiles (agent's own real aggregate
           # columns) plus a 6-month trend computed from this agent's own
           # Leads/Deals/SiteVisits/Reviews. See services/agent_portal.rb#my_performance.
@@ -403,7 +436,7 @@ class App::Routes < Roda
       # create/update/delete route is ever registered here.
       r.on 'public' do
         r.on 'properties' do
-          do_crud(Properties, r, 'RL')
+          do_crud(PublicProperties, r, 'RL')
         end
 
         r.on 'builders' do
@@ -908,6 +941,8 @@ class App::Routes < Roda
         # permission-checked.
         r.on 'uploads' do
           r.post('presign') { Uploads[r].presign }
+          r.get(Integer) { |id| Uploads[r, id: id].get }
+          r.get { Uploads[r].list }
         end
 
         # RBAC admin pages — Roles. `users` (above) already existed pre-Foundation;

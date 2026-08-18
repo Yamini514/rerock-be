@@ -13,40 +13,7 @@ class App::Services::Properties < App::Services::Base
   SORTABLE_COLUMNS = %w[title price created_at status].freeze
 
   def list
-    # Eager-loaded so Property#to_pos's community&.rera_status merge doesn't
-    # fire one extra query per row on top of this dataset's own.
-    ds = model.eager(:community)
-    ds = ds.where(archived: qs[:archived].to_s == 'true') if qs.key?(:archived)
-    ds = ds.where(community_id: ids_from(qs[:community_id])) if qs[:community_id].present?
-    ds = ds.where(builder_id: ids_from(qs[:builder_id])) if qs[:builder_id].present?
-    ds = ds.where(property_type_id: ids_from(qs[:property_type_id])) if qs[:property_type_id].present?
-    ds = ds.where(area_id: ids_from(qs[:area_id])) if qs[:area_id].present?
-    ds = ds.where(agent_id: ids_from(qs[:agent_id])) if qs[:agent_id].present?
-    ds = ds.where(status: qs[:status].to_s.split(',')) if qs[:status].present?
-    # Exact-slug lookup — added for the public/RAM-Portal browse endpoint
-    # (routes.rb's 'public' block), whose property detail pages route by
-    # slug rather than the real numeric id. Harmless additive filter for
-    # every other existing caller (admin list page never passes `slug`).
-    ds = ds.where(slug: qs[:slug]) if qs[:slug].present?
-    if qs[:search].present?
-      ds = ds.where(Sequel.like(:title, "%#{qs[:search]}%", case_insensitive: true))
-    end
-    ds = ds.where(bedrooms_filter(qs[:bedrooms])) if qs[:bedrooms].present?
-    if qs[:min_price].present? && qs[:max_price].present?
-      ds = ds.where(price: qs[:min_price].to_i..qs[:max_price].to_i)
-    end
-    # RERA lives on Community now (rera_status/rera — see
-    # models/community.rb), not on Property, so "RERA Approved" is
-    # expressed as a subquery the same way min_investment_score already is.
-    if qs[:rera].to_s == 'true'
-      ds = ds.where(community_id: Community.where(rera_status: 'Approved').select(:id))
-    end
-    if qs[:min_investment_score].present? && qs[:min_investment_score].to_i > 0
-      score = qs[:min_investment_score].to_i
-      ds = ds.where(community_id: Community.where(Sequel.expr(:investment_score) >= score).select(:id))
-    end
-    ds = ds.where(amenity_filter(ids_from(qs[:amenity_ids]))) if qs[:amenity_ids].present?
-    ds = apply_sort(ds, SORTABLE_COLUMNS, default: [[:created_at, :desc]])
+    ds = apply_sort(filtered_dataset, SORTABLE_COLUMNS, default: [[:created_at, :desc]])
 
     # Opt-in: a caller that doesn't send `page` gets the exact bare-array
     # response it always has (every existing admin/public caller) — fully
@@ -98,6 +65,50 @@ class App::Services::Properties < App::Services::Base
         :pricing_notes, :parking, :furnishing, :advantages, :specifications
       ]
     }
+  end
+
+  protected
+
+  # Every filter `list` applies before sorting/pagination, pulled out so
+  # PublicProperties#list (services/public_properties.rb) can reuse the
+  # exact same community/builder/search/bedrooms/price/rera/amenity filters
+  # and just AND its own public-visibility scope onto the result, rather
+  # than re-implementing any of this.
+  def filtered_dataset
+    # Eager-loaded so Property#to_pos's community&.rera_status merge doesn't
+    # fire one extra query per row on top of this dataset's own.
+    ds = model.eager(:community)
+    ds = ds.where(archived: qs[:archived].to_s == 'true') if qs.key?(:archived)
+    ds = ds.where(community_id: ids_from(qs[:community_id])) if qs[:community_id].present?
+    ds = ds.where(builder_id: ids_from(qs[:builder_id])) if qs[:builder_id].present?
+    ds = ds.where(property_type_id: ids_from(qs[:property_type_id])) if qs[:property_type_id].present?
+    ds = ds.where(area_id: ids_from(qs[:area_id])) if qs[:area_id].present?
+    ds = ds.where(agent_id: ids_from(qs[:agent_id])) if qs[:agent_id].present?
+    ds = ds.where(status: qs[:status].to_s.split(',')) if qs[:status].present?
+    # Exact-slug lookup — added for the public/RAM-Portal browse endpoint
+    # (routes.rb's 'public' block), whose property detail pages route by
+    # slug rather than the real numeric id. Harmless additive filter for
+    # every other existing caller (admin list page never passes `slug`).
+    ds = ds.where(slug: qs[:slug]) if qs[:slug].present?
+    if qs[:search].present?
+      ds = ds.where(Sequel.like(:title, "%#{qs[:search]}%", case_insensitive: true))
+    end
+    ds = ds.where(bedrooms_filter(qs[:bedrooms])) if qs[:bedrooms].present?
+    if qs[:min_price].present? && qs[:max_price].present?
+      ds = ds.where(price: qs[:min_price].to_i..qs[:max_price].to_i)
+    end
+    # RERA lives on Community now (rera_status/rera — see
+    # models/community.rb), not on Property, so "RERA Approved" is
+    # expressed as a subquery the same way min_investment_score already is.
+    if qs[:rera].to_s == 'true'
+      ds = ds.where(community_id: Community.where(rera_status: 'Approved').select(:id))
+    end
+    if qs[:min_investment_score].present? && qs[:min_investment_score].to_i > 0
+      score = qs[:min_investment_score].to_i
+      ds = ds.where(community_id: Community.where(Sequel.expr(:investment_score) >= score).select(:id))
+    end
+    ds = ds.where(amenity_filter(ids_from(qs[:amenity_ids]))) if qs[:amenity_ids].present?
+    ds
   end
 
   private
