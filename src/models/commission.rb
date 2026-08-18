@@ -1,6 +1,24 @@
 class App::Models::Commission < Sequel::Model
   many_to_one :referral
   many_to_one :deal
+  many_to_one :ram_member
+
+  # Same additive-FK-alongside-the-slug sync as models/lead.rb's own
+  # sync_ram_reference! — see that file's comment.
+  def before_validation
+    if new?
+      if ram_member_id.present?
+        self.ram_id = App::Models::RamMember[ram_member_id]&.slug
+      elsif ram_id.present?
+        self.ram_member_id = App::Models::RamMember.where(slug: ram_id).first&.id
+      end
+    elsif column_changed?(:ram_member_id)
+      self.ram_id = ram_member_id.present? ? App::Models::RamMember[ram_member_id]&.slug : nil
+    elsif column_changed?(:ram_id)
+      self.ram_member_id = ram_id.present? ? App::Models::RamMember.where(slug: ram_id).first&.id : nil
+    end
+    super
+  end
 
   # Controlled lifecycle (CRM brief's own recommended states) — an admin can
   # move a commission forward or sideways into REJECTED/CANCELLED, but never

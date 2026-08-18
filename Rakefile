@@ -84,6 +84,59 @@ namespace :db do
   end
 end
 
+namespace :db do
+  # Read-only — never mutates anything. Reports exactly which rows have a
+  # stale reference inside the Property Catalog's array-of-ids columns
+  # (communities.amenity_ids, properties.amenity_ids/tag_ids,
+  # collections.property_ids — none of these have a DB-level FK, so a
+  # deleted Amenity/PropertyTag/Property can silently leave a dangling id
+  # behind) plus properties.agent_slug values that no longer match a real
+  # Agent. Run before relying on the new model-level existence validation
+  # (models/community.rb#validate_amenity_ids, models/property.rb#
+  # validate_amenity_and_tag_ids) to catch anything already in the table —
+  # those only fire on a future save, not on rows nobody edits again.
+  desc "Report (do not repair) stale amenity_ids/tag_ids/property_ids/agent_slug references in the Property Catalog"
+  task :audit_property_catalog_references do
+    App.load!
+
+    valid_amenity_ids = App::Models::Amenity.select_map(:id).to_set
+    valid_tag_ids = App::Models::PropertyTag.select_map(:id).to_set
+    valid_property_ids = App::Models::Property.select_map(:id).to_set
+    valid_agent_slugs = App::Models::Agent.select_map(:slug).to_set
+
+    puts "== Communities: invalid amenity_ids =="
+    App::Models::Community.select(:id, :name, :amenity_ids).each do |c|
+      bad = (c.amenity_ids || []) - valid_amenity_ids.to_a
+      puts "  Community ##{c.id} (#{c.name}): #{bad.join(', ')}" if bad.any?
+    end
+
+    puts "== Properties: invalid amenity_ids =="
+    App::Models::Property.select(:id, :title, :amenity_ids).each do |p|
+      bad = (p.amenity_ids || []) - valid_amenity_ids.to_a
+      puts "  Property ##{p.id} (#{p.title}): #{bad.join(', ')}" if bad.any?
+    end
+
+    puts "== Properties: invalid tag_ids =="
+    App::Models::Property.select(:id, :title, :tag_ids).each do |p|
+      bad = (p.tag_ids || []) - valid_tag_ids.to_a
+      puts "  Property ##{p.id} (#{p.title}): #{bad.join(', ')}" if bad.any?
+    end
+
+    puts "== Collections: invalid property_ids =="
+    App::Models::Collection.select(:id, :name, :property_ids).each do |c|
+      bad = (c.property_ids || []) - valid_property_ids.to_a
+      puts "  Collection ##{c.id} (#{c.name}): #{bad.join(', ')}" if bad.any?
+    end
+
+    puts "== Properties: agent_slug not matching any real Agent =="
+    App::Models::Property.exclude(agent_slug: nil).select(:id, :title, :agent_slug).each do |p|
+      puts "  Property ##{p.id} (#{p.title}): agent_slug=#{p.agent_slug.inspect}" unless valid_agent_slugs.include?(p.agent_slug)
+    end
+
+    puts "Done. Any rows listed above have a stale/orphaned reference — nothing was changed."
+  end
+end
+
 
 # DATABASE_URL="postgres://doqhgpwk:faHZB60XTVMZTczxkznkvXC0rcHxyap6@rogue.db.elephantsql.com:5432/doqhgpwk" rake db:migrate\[0\]
 

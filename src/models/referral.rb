@@ -4,6 +4,7 @@ class App::Models::Referral < Sequel::Model
   many_to_one :community
   many_to_one :lead
   many_to_one :referral_link
+  many_to_one :ram_member
 
   # Reverse side of Deal#referral_id / Commission#referral_id (both real FKs,
   # migrations/0060) — lets services/referrals.rb#list eager-load a RAM's
@@ -11,6 +12,24 @@ class App::Models::Referral < Sequel::Model
   # N+1.
   one_to_many :deals, key: :referral_id
   one_to_many :commissions, key: :referral_id
+
+  # Same additive-FK-alongside-the-slug sync as models/lead.rb's own
+  # sync_ram_reference! — see that file's comment. `agent_slug` deliberately
+  # has no matching `agent_id` (see migrations/0092's own comment).
+  def before_validation
+    if new?
+      if ram_member_id.present?
+        self.ram_id = App::Models::RamMember[ram_member_id]&.slug
+      elsif ram_id.present?
+        self.ram_member_id = App::Models::RamMember.where(slug: ram_id).first&.id
+      end
+    elsif column_changed?(:ram_member_id)
+      self.ram_id = ram_member_id.present? ? App::Models::RamMember[ram_member_id]&.slug : nil
+    elsif column_changed?(:ram_id)
+      self.ram_member_id = ram_id.present? ? App::Models::RamMember.where(slug: ram_id).first&.id : nil
+    end
+    super
+  end
 
   # `agent_slug` has no DB-level FK (see migrations/0059's own comment —
   # deferred-string convention, same as Property/Lead/SiteVisit/Client),

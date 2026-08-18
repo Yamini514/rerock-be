@@ -50,6 +50,14 @@ class App::Services::Deals < App::Services::Base
       referral = Referral.where(client_id: data[:client_id]).exclude(status: ["Purchase Completed", "Cancelled"]).first
       data[:referral_id] = referral.id if referral
     end
+    # Which Lead produced this Deal — same "derive from the real FK already
+    # in hand" reasoning as client_name/property_name/referral_id above.
+    # Prefers the referral's own lead (most specific — the exact contact
+    # that referral tracked), falls back to the client's originating lead.
+    if data[:lead_id].blank? && data[:client_id].present?
+      referral = Referral[data[:referral_id]] if data[:referral_id].present?
+      data[:lead_id] = referral&.lead_id || Lead.where(client_id: data[:client_id]).first&.id
+    end
     save(model.new(data)) do |o|
       DealStatusHistory.create(deal_id: o.id, status: o.stage, changed_by: audit_changed_by, notes: params[:status_note].presence)
       return_success(o.with_status_history)
@@ -80,7 +88,7 @@ class App::Services::Deals < App::Services::Base
     {
       save: [
         :client_id, :client_name, :property_id, :property_name,
-        :agent_slug, :referral_id, :value, :probability, :stage, :closing_date,
+        :agent_slug, :agent_id, :lead_id, :referral_id, :value, :probability, :stage, :closing_date,
         :site_visit_id, :notes
       ]
     }

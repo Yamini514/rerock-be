@@ -54,7 +54,7 @@ class App::Services::Referrals < App::Services::Base
   def self.fields
     {
       save: [
-        :ram_id, :type, :referrer, :referred, :status, :reward, :date, :payout_status, :archived,
+        :ram_id, :ram_member_id, :type, :referrer, :referred, :status, :reward, :date, :payout_status, :archived,
         :client_id, :property_id, :community_id, :lead_id, :agent_slug
       ]
     }

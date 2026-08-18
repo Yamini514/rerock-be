@@ -10,6 +10,13 @@ class App::Models::Community < Sequel::Model
   CONSTRUCTION_STATUSES = ['Under Construction', 'Ready To Move', 'Completed'].freeze
   RERA_STATUSES = ['Approved', 'Pending', 'Not Registered'].freeze
 
+  NAME_MAX_LENGTH = 100
+  TAGLINE_MAX_LENGTH = 150
+  RERA_MAX_LENGTH = 50
+  POSSESSION_MAX_LENGTH = 50
+  OVERVIEW_MAX_LENGTH = 2000
+  MASTER_PLAN_MAX_LENGTH = 2000
+
   # CommunityForm.js deliberately does NOT duplicate these checks
   # client-side (matching models/area.rb / models/builder.rb's approach) —
   # this validate is the single source of truth, and CommunityForm.js just
@@ -27,11 +34,40 @@ class App::Models::Community < Sequel::Model
       dup = self.class.where(Sequel.function(:lower, :name) => name.strip.downcase)
       dup = dup.exclude(id: id) unless new?
       errors.add(:name, 'already exists') if dup.first
+
+      errors.add(:name, 'must be at least 2 characters') if name.strip.length < 2
+      errors.add(:name, "must be #{NAME_MAX_LENGTH} characters or less") if name.length > NAME_MAX_LENGTH
+    end
+
+    # Length checks below are scoped to `new? || column_changed?(...)` (same
+    # convention as models/property_type.rb/area.rb) rather than firing on
+    # every save — Communities#bulk_price_update and the admin list page's
+    # Archive/Restore/Featured-toggle actions all send partial payloads that
+    # never touch these text fields, so a legacy row whose tagline/overview/
+    # etc. predates these limits must still be able to go through one of
+    # those unrelated actions without suddenly failing.
+    if tagline.present? && (new? || column_changed?(:tagline))
+      errors.add(:tagline, "must be #{TAGLINE_MAX_LENGTH} characters or less") if tagline.length > TAGLINE_MAX_LENGTH
+    end
+
+    if overview.present? && (new? || column_changed?(:overview))
+      errors.add(:overview, "must be #{OVERVIEW_MAX_LENGTH} characters or less") if overview.length > OVERVIEW_MAX_LENGTH
+    end
+
+    if master_plan.present? && (new? || column_changed?(:master_plan))
+      errors.add(:master_plan, "must be #{MASTER_PLAN_MAX_LENGTH} characters or less") if master_plan.length > MASTER_PLAN_MAX_LENGTH
+    end
+
+    if possession.present? && (new? || column_changed?(:possession))
+      errors.add(:possession, "must be #{POSSESSION_MAX_LENGTH} characters or less") if possession.length > POSSESSION_MAX_LENGTH
     end
 
     errors.add(:status, "must be one of #{CONSTRUCTION_STATUSES.join(', ')}") if status.present? && !CONSTRUCTION_STATUSES.include?(status)
     errors.add(:rera_status, "must be one of #{RERA_STATUSES.join(', ')}") if rera_status.present? && !RERA_STATUSES.include?(rera_status)
     errors.add(:rera, 'is required when RERA Status is Approved') if rera_status == 'Approved' && rera.blank?
+    if rera.present? && (new? || column_changed?(:rera))
+      errors.add(:rera, "must be #{RERA_MAX_LENGTH} characters or less") if rera.length > RERA_MAX_LENGTH
+    end
 
     errors.add(:builder_id, 'must reference an existing Builder') if builder_id && App::Models::Builder[builder_id].nil?
     errors.add(:area_id, 'must reference an existing Area') if area_id && App::Models::Area[area_id].nil?
@@ -48,11 +84,40 @@ class App::Models::Community < Sequel::Model
     end
 
     errors.add(:investment_score, 'must be between 0 and 100') if investment_score && !investment_score.between?(0, 100)
+    # YoY price appreciation can go negative (a real downturn), so this
+    # isn't clamped to 0 like investment_score above — just wide enough to
+    # catch an obvious typo (e.g. "9900" meant to be "9.9") while allowing
+    # any real-world swing.
+    errors.add(:growth_pct, 'must be between -100 and 100') if growth_pct && !growth_pct.between?(-100, 100)
 
     validate_floor_plans
+    validate_amenity_ids
   end
 
   private
+
+  # Same reasoning as models/property.rb's own validate_amenity_and_tag_ids
+  # (which this predates conceptually — `amenity_ids` here is the original
+  # plain Postgres integer[] column, migrations/0011) — a stale/typo'd id
+  # can't trigger a DB-level FK violation since there's no join table, so
+  # this closes that gap at the app level instead, same "typo shouldn't
+  # silently create an orphaned assignment" convention as this model's own
+  # builder_id/area_id existence checks above.
+  def validate_amenity_ids
+    return unless amenity_ids.present? && (new? || column_changed?(:amenity_ids))
+
+    # `amenity_ids` is a Sequel::Postgres::PGArray at this point (the pg_array
+    # extension typecasts the integer[] column into one on load/assignment),
+    # not a plain Ruby Array — passing it straight into `where(id: ...)`
+    # makes Sequel build a single `"id" = ARRAY[...]::integer[]` equality
+    # comparison instead of an `IN (...)` list, which Postgres rejects
+    # (`integer = integer[]` has no such operator). `.to_a` converts it to a
+    # genuine plain Array first, so this becomes the intended IN-list query.
+    ids = amenity_ids.to_a
+    valid_ids = App::Models::Amenity.where(id: ids).select_map(:id)
+    invalid_ids = ids - valid_ids
+    errors.add(:amenity_ids, "references amenities that don't exist: #{invalid_ids.join(', ')}") if invalid_ids.any?
+  end
 
   # `floor_plans` (migrations/0077) is a project-wide "explore by
   # configuration" gallery, distinct from Property#floor_plans (a single

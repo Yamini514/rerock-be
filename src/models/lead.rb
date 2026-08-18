@@ -3,7 +3,24 @@ class App::Models::Lead < Sequel::Model
   many_to_one :community
   many_to_one :area
   many_to_one :client
+  many_to_one :agent
+  many_to_one :ram_member
   one_to_many :lead_status_histories
+
+  # Keeps `agent_id`/`ram_member_id` (migrations/0088) in lockstep with the
+  # deferred `agent_slug`/`ram_id` strings they were added alongside —
+  # whichever of a pair was actually touched in this save wins and the
+  # other is re-derived from it, so every existing `.where(agent_slug: ...)`/
+  # `.where(ram_id: ...)` scoping query (agent_portal.rb/ram_portal.rb) never
+  # has to change. `new?` can't rely on `column_changed?` (always false for
+  # attributes set via `.new` — see #notify_agent_of_assignment!'s own
+  # comment below), so a brand-new record instead just checks which of the
+  # pair is actually present.
+  def before_validation
+    sync_agent_reference!
+    sync_ram_reference!
+    super
+  end
 
   # A lead still open (not Closed/Lost) past this many days is auto-archived
   # by services/leads.rb#sweep_expired_leads! — see that method's own comment.
@@ -107,6 +124,36 @@ class App::Models::Lead < Sequel::Model
       if App::Models::SiteVisit.where(lead_id: id, status: 'Completed').first
         errors.add(:status, "can't move back to #{status} — a site visit for this lead has already been completed")
       end
+    end
+  end
+
+  private
+
+  def sync_agent_reference!
+    if new?
+      if agent_id.present?
+        self.agent_slug = App::Models::Agent[agent_id]&.slug
+      elsif agent_slug.present?
+        self.agent_id = App::Models::Agent.where(slug: agent_slug).first&.id
+      end
+    elsif column_changed?(:agent_id)
+      self.agent_slug = agent_id.present? ? App::Models::Agent[agent_id]&.slug : nil
+    elsif column_changed?(:agent_slug)
+      self.agent_id = agent_slug.present? ? App::Models::Agent.where(slug: agent_slug).first&.id : nil
+    end
+  end
+
+  def sync_ram_reference!
+    if new?
+      if ram_member_id.present?
+        self.ram_id = App::Models::RamMember[ram_member_id]&.slug
+      elsif ram_id.present?
+        self.ram_member_id = App::Models::RamMember.where(slug: ram_id).first&.id
+      end
+    elsif column_changed?(:ram_member_id)
+      self.ram_id = ram_member_id.present? ? App::Models::RamMember[ram_member_id]&.slug : nil
+    elsif column_changed?(:ram_id)
+      self.ram_member_id = ram_id.present? ? App::Models::RamMember.where(slug: ram_id).first&.id : nil
     end
   end
 end

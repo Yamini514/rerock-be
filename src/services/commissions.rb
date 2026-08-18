@@ -63,7 +63,7 @@ class App::Services::Commissions < App::Services::Base
   def self.fields
     {
       save: [
-        :referral_id, :deal_id, :ram_id, :sale_amount, :commission_rate,
+        :referral_id, :deal_id, :ram_id, :ram_member_id, :sale_amount, :commission_rate,
         :commission_amount, :status, :approved_by, :approved_at, :paid_at, :notes
       ]
     }

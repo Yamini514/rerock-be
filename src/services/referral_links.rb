@@ -32,6 +32,7 @@ class App::Services::ReferralLinks < App::Services::Base
 
     link = ReferralLink.new(
       ram_id: ram.slug,
+      ram_member_id: ram.id,
       property_id: property_id,
       code: unique_code
     )

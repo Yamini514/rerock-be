@@ -77,7 +77,8 @@ class App::Services::Clients < App::Services::Base
   # doesn't need both messages for the same single edit.
   def update(data=nil)
     data ||= data_for(:save)
-    agent_changing = data.key?(:assigned_agent_slug) && data[:assigned_agent_slug] != item.assigned_agent_slug
+    agent_changing = (data.key?(:assigned_agent_slug) && data[:assigned_agent_slug] != item.assigned_agent_slug) ||
+      (data.key?(:agent_id) && data[:agent_id] != item.agent_id)
     status_changing = data.key?(:status) && data[:status] != item.status
     item.set_fields(data, data.keys)
     save(item) do |obj|
@@ -115,7 +116,7 @@ class App::Services::Clients < App::Services::Base
     {
       save: [
         :name, :email, :phone, :avatar, :joined, :status,
-        :assigned_agent_slug, :assigned_ram_id, :type, :city,
+        :assigned_agent_slug, :agent_id, :assigned_ram_id, :ram_member_id, :type, :city,
         :referral_source, :referred_by_id,
         :invested_properties, :notes, :communication_log, :timeline, :archived
       ]

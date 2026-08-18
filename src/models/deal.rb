@@ -3,9 +3,37 @@ class App::Models::Deal < Sequel::Model
   many_to_one :property
   many_to_one :site_visit
   many_to_one :referral
+  many_to_one :agent
+  many_to_one :lead
   one_to_many :deal_status_histories
 
   DEFAULT_COMMISSION_RATE_PCT = 1.0
+
+  # Same additive-FK-alongside-the-slug sync as models/lead.rb's own
+  # sync_agent_reference! — see that file's comment. No sync needed for
+  # `lead_id` (migrations/0091): it's a plain new FK, not paired with any
+  # deferred string.
+  def before_validation
+    if new?
+      if agent_id.present?
+        self.agent_slug = App::Models::Agent[agent_id]&.slug
+      elsif agent_slug.present?
+        self.agent_id = App::Models::Agent.where(slug: agent_slug).first&.id
+      end
+    elsif column_changed?(:agent_id)
+      self.agent_slug = agent_id.present? ? App::Models::Agent[agent_id]&.slug : nil
+    elsif column_changed?(:agent_slug)
+      self.agent_id = agent_slug.present? ? App::Models::Agent.where(slug: agent_slug).first&.id : nil
+    end
+    super
+  end
+
+  # "Did this Deal originate from a RAM Referral?" — no direct column,
+  # transitively resolved through the real referral_id FK (migrations/0060)
+  # rather than a redundant ram_member_id copied onto Deal itself.
+  def ram_member
+    referral&.ram_member
+  end
 
   # Ordered, real audit trail of every stage change — written server-side,
   # insert-only (services/deals.rb#create/#update, services/agent_portal.rb#

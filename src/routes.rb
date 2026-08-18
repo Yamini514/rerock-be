@@ -44,6 +44,8 @@ class App::Routes < Roda
     'Referrals' => 'crm',
     'Commissions' => 'crm',
     'Documents' => 'crm',
+    'Deals' => 'crm',
+    'RamMembers' => 'agentNetwork',
   }.freeze
 
   ACTION_FLAGS = { 'C' => 'create', 'R' => 'view', 'L' => 'view', 'U' => 'edit', 'D' => 'delete' }.freeze
@@ -631,7 +633,23 @@ class App::Routes < Roda
         end
 
         r.on 'leads' do
-          do_crud(Leads, r, 'CRUDL')
+          # Lead -> Client conversion, plus the plain show/update/delete, all
+          # inlined in this one r.on(Integer) block — same reason the 'ram'
+          # admin route below inlines its own show/update/delete alongside
+          # 'reset-password'/'recommendations': Roda's r.on commits once a
+          # path segment matches, so a custom action nested under /leads/:id
+          # has to live here, not left for do_crud (now only asked for
+          # 'C'reate and 'L'ist below). require_permission! calls mirror
+          # exactly what do_crud's own r.get(Integer)/r.put(Integer)/
+          # r.delete(Integer) would have done for the 'crm' module.
+          r.on(Integer) do |id|
+            r.post('convert-to-client') { require_permission!('crm', 'edit'); Leads[r, id: id].convert_to_client }
+            r.get { require_permission!('crm', 'view'); Leads[r, id: id].get }
+            r.put { require_permission!('crm', 'edit'); Leads[r, id: id].update }
+            r.delete { require_permission!('crm', 'delete'); Leads[r, id: id].delete }
+          end
+
+          do_crud(Leads, r, 'CL')
         end
 
         r.on 'site-visits' do

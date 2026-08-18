@@ -11,7 +11,7 @@ Sequel.migration do
     alter_table(:price_histories) { add_column :year, Integer }
 
     from(:price_histories).where(year: nil).update(
-      year: Sequel.function(:extract, :year, :effective_date).cast(:integer)
+      year: Sequel.extract(:year, :effective_date).cast(:integer)
     )
 
     alter_table(:price_histories) { add_index [:community_id, :year] }

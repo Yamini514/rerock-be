@@ -2,6 +2,24 @@ class App::Models::SiteVisit < Sequel::Model
   many_to_one :lead
   many_to_one :property
   many_to_one :community
+  many_to_one :agent
+
+  # Same additive-FK-alongside-the-slug sync as models/lead.rb's own
+  # sync_agent_reference! — see that file's comment for the full reasoning.
+  def before_validation
+    if new?
+      if agent_id.present?
+        self.agent_slug = App::Models::Agent[agent_id]&.slug
+      elsif agent_slug.present?
+        self.agent_id = App::Models::Agent.where(slug: agent_slug).first&.id
+      end
+    elsif column_changed?(:agent_id)
+      self.agent_slug = agent_id.present? ? App::Models::Agent[agent_id]&.slug : nil
+    elsif column_changed?(:agent_slug)
+      self.agent_id = agent_slug.present? ? App::Models::Agent.where(slug: agent_slug).first&.id : nil
+    end
+    super
+  end
 
   # Mirrors lib/data/siteVisits.js's SITE_VISIT_STATUSES / services/
   # site_visits.rb#update's own comment ("Scheduled -> Completed/
@@ -55,6 +73,7 @@ class App::Models::SiteVisit < Sequel::Model
 
     App::Models::Deal.create(
       site_visit_id: id,
+      lead_id: lead_id,
       client_id: lead&.client_id,
       client_name: client_name,
       property_id: property_id,

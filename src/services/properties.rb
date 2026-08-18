@@ -21,6 +21,7 @@ class App::Services::Properties < App::Services::Base
     ds = ds.where(builder_id: ids_from(qs[:builder_id])) if qs[:builder_id].present?
     ds = ds.where(property_type_id: ids_from(qs[:property_type_id])) if qs[:property_type_id].present?
     ds = ds.where(area_id: ids_from(qs[:area_id])) if qs[:area_id].present?
+    ds = ds.where(agent_id: ids_from(qs[:agent_id])) if qs[:agent_id].present?
     ds = ds.where(status: qs[:status].to_s.split(',')) if qs[:status].present?
     # Exact-slug lookup — added for the public/RAM-Portal browse endpoint
     # (routes.rb's 'public' block), whose property detail pages route by
@@ -90,7 +91,7 @@ class App::Services::Properties < App::Services::Base
         :status, :price, :price_per_sqft, :built_up_area, :land_area,
         :bedrooms, :bathrooms, :balconies, :facing, :floor,
         :images, :highlights, :description, :floor_plans,
-        :agent_slug, :featured, :tag_ids, :amenity_ids, :advisor_notes,
+        :agent_slug, :agent_id, :featured, :tag_ids, :amenity_ids, :advisor_notes,
         :sales_team, :publish_status, :publish_at, :seo, :videos, :tour_360, :virtual_tour,
         :documents, :archived,
         :code, :configuration, :unit_number, :offer_price, :booking_amount, :maintenance,

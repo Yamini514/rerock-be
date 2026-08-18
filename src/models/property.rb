@@ -4,6 +4,28 @@ class App::Models::Property < Sequel::Model
   many_to_one :area
   many_to_one :location
   many_to_one :property_type
+  many_to_one :agent
+
+  # Same additive-FK-alongside-the-slug sync as models/lead.rb's own
+  # sync_agent_reference! (migrations/0088, CRM pass) — see that file's
+  # comment for the full reasoning. `agent_slug` (migrations/0012) stays
+  # the field PropertyForm.js's existing Advisor Select submits; `agent_id`
+  # (migrations/0095) is kept in lockstep so a real FK exists to protect
+  # against a stale/deleted Agent reference.
+  def before_validation
+    if new?
+      if agent_id.present?
+        self.agent_slug = App::Models::Agent[agent_id]&.slug
+      elsif agent_slug.present?
+        self.agent_id = App::Models::Agent.where(slug: agent_slug).first&.id
+      end
+    elsif column_changed?(:agent_id)
+      self.agent_slug = agent_id.present? ? App::Models::Agent[agent_id]&.slug : nil
+    elsif column_changed?(:agent_slug)
+      self.agent_id = agent_slug.present? ? App::Models::Agent.where(slug: agent_slug).first&.id : nil
+    end
+    super
+  end
 
   # Mirrors PropertyForm.js's own option lists. `STATUSES` is presence-
   # required below (it lives on the same "basic" tab as title/community_id/
@@ -73,9 +95,48 @@ class App::Models::Property < Sequel::Model
     errors.add(:images, 'add at least one photo') if images.nil? || images.empty?
 
     validate_configuration
+    validate_amenity_and_tag_ids
   end
 
   private
+
+  # `amenity_ids`/`tag_ids` are plain Postgres integer[] columns, not join
+  # tables (see migrations/0012's own comment on why — Base#create/#update's
+  # generic `data_for(:save)` + `set_fields` has no support for many-to-many
+  # association setters, so a join table would need bespoke add/remove
+  # actions for no relational-integrity benefit at this scale), which means
+  # nothing at the DB level stops a stale/typo'd id from silently sitting in
+  # either array. This is the real, unbypassable guard underneath
+  # AmenitiesLibraryTab's/PropertyTagsLibraryTab's own "in use" delete guard
+  # (services/amenities.rb, services/property_tags.rb) — same "typo
+  # shouldn't silently create an orphaned assignment" reasoning as
+  # Community#validate's own builder_id/area_id existence checks. Scoped to
+  # `new? || column_changed?(...)` so an unrelated edit to an already-existing
+  # property with a legacy bad id doesn't suddenly start failing.
+  def validate_amenity_and_tag_ids
+    # `amenity_ids`/`tag_ids` are Sequel::Postgres::PGArray at this point
+    # (the pg_array extension typecasts each integer[] column into one on
+    # load/assignment), not a plain Ruby Array — passing either straight
+    # into `where(id: ...)` makes Sequel build a single
+    # `"id" = ARRAY[...]::integer[]` equality comparison instead of an
+    # `IN (...)` list, which Postgres rejects (`integer = integer[]` has no
+    # such operator). `.to_a` converts each to a genuine plain Array first,
+    # so this becomes the intended IN-list query — same fix as
+    # models/community.rb's own validate_amenity_ids.
+    if amenity_ids.present? && (new? || column_changed?(:amenity_ids))
+      ids = amenity_ids.to_a
+      valid_ids = App::Models::Amenity.where(id: ids).select_map(:id)
+      invalid_ids = ids - valid_ids
+      errors.add(:amenity_ids, "references amenities that don't exist: #{invalid_ids.join(', ')}") if invalid_ids.any?
+    end
+
+    if tag_ids.present? && (new? || column_changed?(:tag_ids))
+      ids = tag_ids.to_a
+      valid_ids = App::Models::PropertyTag.where(id: ids).select_map(:id)
+      invalid_ids = ids - valid_ids
+      errors.add(:tag_ids, "references property tags that don't exist: #{invalid_ids.join(', ')}") if invalid_ids.any?
+    end
+  end
 
   # Configuration is never a fixed, hardcoded enum (unlike Community's
   # CONSTRUCTION_STATUSES/RERA_STATUSES) — it must be one of the selected

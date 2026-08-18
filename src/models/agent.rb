@@ -84,6 +84,32 @@ class App::Models::Agent < Sequel::Model
       errors.add(:date_of_birth, "Can't be blank") if date_of_birth.nil?
     end
     errors.add(:date_of_birth, "must result in an age under 49") if date_of_birth.present? && age && age >= 49
+
+    validate_strong_area_ids
+  end
+
+  # Not marked `private` — every other method in this file (live_stats,
+  # as_pos, password=, etc.) is called externally from services/agents.rb,
+  # so there's no existing `private` section to slot this into without
+  # accidentally hiding those from their real callers.
+  #
+  # `strong_area_ids` is a plain Postgres integer[] column (see this file's
+  # own comment above), so nothing at the DB level stops a stale/deleted
+  # Area id from silently sitting in it — same "typo/deleted-record
+  # shouldn't silently create an orphaned assignment" reasoning as
+  # models/community.rb#validate_amenity_ids. `.to_a` matters here too: the
+  # column comes back as a Sequel::Postgres::PGArray, and passing that
+  # straight into `where(id: ...)` makes Sequel build a single
+  # `"id" = ARRAY[...]::integer[]` comparison instead of an `IN (...)` list
+  # (`integer = integer[]` has no such Postgres operator) — same bug already
+  # fixed in models/community.rb/models/property.rb.
+  def validate_strong_area_ids
+    return unless strong_area_ids.present? && (new? || column_changed?(:strong_area_ids))
+
+    ids = strong_area_ids.to_a
+    valid_ids = App::Models::Area.where(id: ids).select_map(:id)
+    invalid_ids = ids - valid_ids
+    errors.add(:strong_area_ids, "references areas that don't exist: #{invalid_ids.join(', ')}") if invalid_ids.any?
   end
 
   # Derived from date_of_birth, not a stored/directly-typed column (see

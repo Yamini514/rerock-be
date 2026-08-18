@@ -53,7 +53,7 @@ class App::Services::SiteVisits < App::Services::Base
   def self.fields
     {
       save: [
-        :lead_id, :property_id, :community_id, :client_name, :agent_slug,
+        :lead_id, :property_id, :community_id, :client_name, :agent_slug, :agent_id,
         :date, :time, :status, :notes, :archived
       ]
     }

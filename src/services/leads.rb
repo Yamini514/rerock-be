@@ -24,6 +24,7 @@ class App::Services::Leads < App::Services::Base
     ds = ds.where(property_id: qs[:property_id]) if qs[:property_id].present?
     ds = ds.where(community_id: qs[:community_id]) if qs[:community_id].present?
     ds = ds.where(area_id: qs[:area_id]) if qs[:area_id].present?
+    ds = ds.where(client_id: qs[:client_id]) if qs[:client_id].present?
     if qs[:search].present?
       term = "%#{qs[:search]}%"
       # NOTE: deliberately NOT services/users.rb's `.where(a).or(b)` idiom —
@@ -104,9 +105,79 @@ class App::Services::Leads < App::Services::Base
         :client_name, :client_phone, :client_email, :avatar,
         :property_id, :community_id, :area_id, :budget,
         :source, :priority, :status, :last_follow_up, :next_follow_up,
-        :agent_slug, :ram_id, :timeline, :archived,
+        :agent_slug, :agent_id, :ram_id, :ram_member_id, :timeline, :archived,
         :facing, :floor_range, :quality_score, :loan_percentage
       ]
     }
+  end
+
+  # Lead -> Client conversion (POST /leads/:id/convert-to-client). Idempotent
+  # — a lead that already has a client_id just returns that same Client
+  # rather than erroring or creating a second one, so a double-click/retry
+  # can never produce a duplicate. Dedup against an existing Client by
+  # phone/email first, same "first real match wins, don't invent a new
+  # contact" business rule as Base#create_referral_with_lead!'s own
+  # phone/email lookup — if one exists, the lead is linked to it instead of
+  # spawning a duplicate account.
+  def convert_to_client
+    lead = Lead[rp[:id]]
+    return_errors!("Lead not found.", 404) if lead.nil?
+
+    return return_success(lead.client.with_status_history) if lead.client_id.present?
+
+    return_errors!("Only a Closed (won) lead can be converted to a client.", 422) unless lead.status == "Closed"
+    return_errors!("This lead has no email on file — a client account needs one to log in.", 422) if lead.client_email.blank?
+
+    existing_client = Client.where(phone: lead.client_phone).first
+    existing_client ||= Client.where(email: lead.client_email).first
+
+    client = existing_client
+    temp_password = nil
+    validation_errors = nil
+
+    App.db.transaction do
+      if client.nil?
+        client = Client.new(
+          name: lead.client_name,
+          email: lead.client_email,
+          phone: lead.client_phone,
+          status: "Active",
+          agent_id: lead.agent_id,
+          assigned_agent_slug: lead.agent_slug,
+          ram_member_id: lead.ram_member_id,
+          assigned_ram_id: lead.ram_id,
+          referral_source: lead.source,
+          timeline: [{ date: Date.today.to_s, event: "Converted from Lead", note: "Converted from Lead ##{lead.id}" }]
+        )
+        temp_password = SecureRandom.alphanumeric(10)
+        client.password = temp_password
+        client.email_verified_at = Time.now
+        unless client.valid?
+          validation_errors = client.errors
+          raise Sequel::Rollback
+        end
+        client.save(validate: false)
+      end
+
+      lead.client_id = client.id
+      lead.save(validate: false)
+    end
+
+    return_errors!(validation_errors, 400) if validation_errors
+
+    if temp_password
+      client.send_temporary_password_email(temp_password)
+      ClientStatusHistory.create(client_id: client.id, status: client.status, changed_by: audit_changed_by, notes: "Converted from Lead ##{lead.id}")
+    end
+
+    Notification.create(
+      audience: "admin",
+      type: "client",
+      icon: "UserCheck",
+      title: "Lead converted to client",
+      message: "#{lead.client_name} was converted from Lead ##{lead.id} to a Client account."
+    )
+
+    return_success(client.with_status_history)
   end
 end

@@ -12,6 +12,49 @@ class App::Models::Client < Sequel::Model
   many_to_one :referred_by, class: self
   one_to_many :referrals, key: :referred_by_id, class: self
   one_to_many :client_status_histories
+  many_to_one :agent
+  many_to_one :ram_member
+
+  # Same additive-FK-alongside-the-slug sync as models/lead.rb's own
+  # sync_agent_reference!/sync_ram_reference! — see that file's comment.
+  # Field names differ here (`assigned_agent_slug`/`assigned_ram_id`, both
+  # slugs despite the latter's name — migrations/0017) but the logic is
+  # identical.
+  def before_validation
+    if new?
+      if agent_id.present?
+        self.assigned_agent_slug = App::Models::Agent[agent_id]&.slug
+      elsif assigned_agent_slug.present?
+        self.agent_id = App::Models::Agent.where(slug: assigned_agent_slug).first&.id
+      end
+      if ram_member_id.present?
+        self.assigned_ram_id = App::Models::RamMember[ram_member_id]&.slug
+      elsif assigned_ram_id.present?
+        self.ram_member_id = App::Models::RamMember.where(slug: assigned_ram_id).first&.id
+      end
+    else
+      if column_changed?(:agent_id)
+        self.assigned_agent_slug = agent_id.present? ? App::Models::Agent[agent_id]&.slug : nil
+      elsif column_changed?(:assigned_agent_slug)
+        self.agent_id = assigned_agent_slug.present? ? App::Models::Agent.where(slug: assigned_agent_slug).first&.id : nil
+      end
+      if column_changed?(:ram_member_id)
+        self.assigned_ram_id = ram_member_id.present? ? App::Models::RamMember[ram_member_id]&.slug : nil
+      elsif column_changed?(:assigned_ram_id)
+        self.ram_member_id = assigned_ram_id.present? ? App::Models::RamMember.where(slug: assigned_ram_id).first&.id : nil
+      end
+    end
+    super
+  end
+
+  # "Which Lead created this Client?" (the reverse of Lead#client) — a
+  # client can in principle be reached from more than one Lead row over
+  # time (e.g. a returning contact who enquires again after already
+  # converting), so this resolves to the earliest one, the one that
+  # actually produced the account via services/leads.rb#convert_to_client.
+  def originating_lead
+    App::Models::Lead.where(client_id: id).order(:created_at).first
+  end
 
   # Ordered, real audit trail of every status change — written server-side,
   # insert-only (services/clients.rb#create/#update, services/agent_portal.rb#
@@ -243,6 +286,12 @@ class App::Models::Client < Sequel::Model
       'type' => type,
       'assignedAgentSlug' => assigned_agent_slug,
       'assignedRamId' => assigned_ram_id,
+      # Real FKs (migrations/0090), kept in lockstep with the two deferred
+      # strings above by this model's own before_validation sync hook — the
+      # Client Portal (lib/queries/client.js's useMyAssignedAgent/Ram) now
+      # matches against these instead of the slug fields.
+      'assignedAgentId' => agent_id,
+      'assignedRamMemberId' => ram_member_id,
       'referralCode' => referral_code,
       'referredById' => referred_by_id,
       'investedProperties' => invested_properties,
