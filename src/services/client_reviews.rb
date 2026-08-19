@@ -60,17 +60,13 @@ class App::Services::ClientReviews < App::Services::Base
     when "RamMember"
       client.assigned_ram_id.present? && RamMember.where(id: reviewable_id, slug: client.assigned_ram_id).first.present?
     when "Property"
-      owned_property_ids(client).include?(reviewable_id)
+      client.owned_property_ids.include?(reviewable_id)
     when "Builder"
-      Property.where(id: owned_property_ids(client), builder_id: reviewable_id).first.present?
+      Property.where(id: client.owned_property_ids, builder_id: reviewable_id).first.present?
     when "Community"
-      Property.where(id: owned_property_ids(client), community_id: reviewable_id).first.present?
+      Property.where(id: client.owned_property_ids, community_id: reviewable_id).first.present?
     else
       false
     end
-  end
-
-  def owned_property_ids(client)
-    (client.invested_properties || []).map { |p| p['propertyId'] || p[:propertyId] }.compact.map(&:to_i)
   end
 end

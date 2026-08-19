@@ -28,6 +28,21 @@ class App::Models::Deal < Sequel::Model
     super
   end
 
+  # Closing a Deal with no real sale value (left at the form's own default
+  # of 0) used to sail through silently — and since
+  # #sync_client_investment! below copies this value verbatim into
+  # Client#invested_properties, it produced a real, visible "Total
+  # Invested: ₹0" on that client's own Dashboard/Portfolio despite them
+  # genuinely owning a property. Scoped to new?/stage actually changing so
+  # an unrelated edit (e.g. notes) on a legacy deal that closed before this
+  # check existed doesn't suddenly start failing.
+  def validate
+    super
+    if stage == 'Closed' && (new? || column_changed?(:stage)) && value.to_i <= 0
+      errors.add(:value, "must be greater than 0 before this deal can be closed")
+    end
+  end
+
   # "Did this Deal originate from a RAM Referral?" — no direct column,
   # transitively resolved through the real referral_id FK (migrations/0060)
   # rather than a redundant ram_member_id copied onto Deal itself.
@@ -180,16 +195,21 @@ class App::Models::Deal < Sequel::Model
   # one-time seed on create) — closing a deal for an existing client never
   # touched it, so a real, closed sale silently never showed up in that
   # client's own Portfolio. Called unconditionally after every save
-  # (services/deals.rb#create/#update), same "explicit call after save, guard by
-  # idempotency" convention as ensure_commission_for_closure! above — guarded
-  # here by "does this client already have an entry for this exact
-  # property" so re-saving an already-Closed deal (e.g. editing notes) never
-  # appends a second one. Deliberately does NOT try to *remove* the entry if
-  # the deal is later reopened (moved off Closed) — unlike
-  # #sync_property_status_for_stage!'s property-status revert, there's no
-  # deal_id stored per invested_properties entry to safely tell "this is the
-  # one I added" apart from one an admin added by hand, so removing here
-  # risks deleting real data instead of just undoing this method's own work.
+  # (services/deals.rb#create/#update), same "explicit call after save"
+  # convention as ensure_commission_for_closure! above — but unlike that
+  # method's own "skip if a row already exists" guard, this one *replaces*
+  # an existing entry for the same property rather than skipping outright:
+  # an earlier version of this method only ever skipped, which meant fixing
+  # a deal that had first closed with an incorrect/zero `value` (now
+  # rejected up front by this model's own `validate`, but already-existing
+  # rows predate that) could never actually correct the client's Portfolio
+  # — the stale entry just sat there forever. Deliberately does NOT try to
+  # *remove* the entry if the deal is later reopened (moved off Closed) —
+  # unlike #sync_property_status_for_stage!'s property-status revert,
+  # there's no deal_id stored per invested_properties entry to safely tell
+  # "this is the one I added" apart from one an admin added by hand, so
+  # removing here risks deleting real data instead of just undoing this
+  # method's own work.
   def sync_client_investment!
     return unless stage == 'Closed'
     return if client_id.nil? || property_id.nil?
@@ -198,8 +218,6 @@ class App::Models::Deal < Sequel::Model
     return if client.nil?
 
     existing = client.invested_properties || []
-    return if existing.any? { |h| (h['propertyId'] || h[:propertyId]).to_i == property_id }
-
     prop = property
     entry = {
       'propertyId' => property_id,
@@ -209,7 +227,11 @@ class App::Models::Deal < Sequel::Model
       'purchaseDate' => (closing_date || Date.today).to_s
     }
 
-    client.invested_properties = existing + [entry]
+    index = existing.find_index { |h| (h['propertyId'] || h[:propertyId]).to_i == property_id }
+    updated = index ? existing.each_with_index.map { |h, i| i == index ? entry : h } : existing + [entry]
+    return if updated == existing
+
+    client.invested_properties = updated
     client.save_changes(validate: false)
   rescue => e
     # Same "must never fail the real operation that already succeeded"

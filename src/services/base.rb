@@ -181,7 +181,14 @@ class App::Services::Base
 
   def item(id=rp[:id])
     @item ||= begin
-      model[id] || return_errors!("No #{model.class} found with id: #{id}", 404)
+      # `model` here is the Sequel *class* itself (e.g. App::Models::Notification)
+      # — `model.class` returns Ruby's own `Class` (every class is an
+      # instance of Class), not the model's name, so this was rendering as
+      # the meaningless "No Class found with id: 38" instead of naming the
+      # actual resource. `.name.split('::').last` matches the same
+      # "readable resource name" convention #delete already uses two lines
+      # up (`item.class.name.split('::').last`).
+      model[id] || return_errors!("No #{model.name.split('::').last} found with id: #{id}", 404)
     end
   end
 

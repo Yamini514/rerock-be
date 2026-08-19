@@ -24,6 +24,17 @@ class App::Services::ClientSiteVisits < App::Services::Base
 
     property = property_slug.present? ? Property.first(slug: property_slug) : nil
 
+    # A client who already owns this property (Client#invested_properties,
+    # migrations/0017) has nothing left to decide by touring it again —
+    # nothing stopped them from re-booking a site visit on a property
+    # they'd already purchased. Same "does this client own this property"
+    # check services/client_reviews.rb already uses to gate a Property
+    # review, now shared on the model (Client#owned_property_ids) instead
+    # of staying duplicated.
+    if property && client.owned_property_ids.include?(property.id)
+      return_errors!("You already own this property — no need to schedule another visit.", 400)
+    end
+
     # A logged-in client can still be the same person who clicked a RAM's
     # shared referral link this session (BookVisitModal.js sends the code
     # regardless of login state) — attribute it the same way
