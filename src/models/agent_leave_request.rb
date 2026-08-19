@@ -1,4 +1,4 @@
-class App::Models::LeaveRequest < Sequel::Model
+class App::Models::AgentLeaveRequest < Sequel::Model
   many_to_one :agent
 
   STATUSES = %w[Pending Approved Rejected Cancelled].freeze

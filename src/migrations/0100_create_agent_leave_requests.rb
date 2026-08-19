@@ -16,7 +16,7 @@ Sequel.migration do
       # (AgentDetailClient.js's attendanceTone: Present/Half Day/Leave) so
       # an approved request's `leave_type` can be written straight into an
       # attendance row's `status` with no translation step — see
-      # LeaveRequest#apply_to_attendance!.
+      # AgentLeaveRequest#apply_to_attendance!.
       String :leave_type, default: 'Leave'
       String :reason, text: true
 

@@ -373,7 +373,7 @@ class App::Services::AgentPortal < App::Services::Base
     agent = current_agent
     return_errors!("Not signed in.", 401) if agent.nil?
 
-    return_success(LeaveRequest.where(agent_id: agent.id).order(Sequel.desc(:created_at)).all.map(&:to_pos))
+    return_success(AgentLeaveRequest.where(agent_id: agent.id).order(Sequel.desc(:created_at)).all.map(&:to_pos))
   end
 
   # Real leave requests always originate here, never via the admin-facing
@@ -390,11 +390,11 @@ class App::Services::AgentPortal < App::Services::Base
     return_errors!("End date can't be before the start date.", 400) if end_date < start_date
     return_errors!("Start date can't be in the past.", 400) if start_date < Date.today
 
-    leave = LeaveRequest.new(
+    leave = AgentLeaveRequest.new(
       agent_id: agent.id,
       start_date: start_date,
       end_date: end_date,
-      leave_type: LeaveRequest::TYPES.include?(params[:leave_type]) ? params[:leave_type] : 'Leave',
+      leave_type: AgentLeaveRequest::TYPES.include?(params[:leave_type]) ? params[:leave_type] : 'Leave',
       reason: params[:reason]&.strip.presence,
       status: 'Pending'
     )
@@ -412,7 +412,7 @@ class App::Services::AgentPortal < App::Services::Base
     agent = current_agent
     return_errors!("Not signed in.", 401) if agent.nil?
 
-    leave = LeaveRequest[rp[:id]]
+    leave = AgentLeaveRequest[rp[:id]]
     return_errors!("Leave request not found.", 404) if leave.nil?
     return_errors!("This leave request isn't yours.", 403) unless leave.agent_id == agent.id
     return_errors!("Only a pending request can be cancelled.", 400) unless leave.status == 'Pending'

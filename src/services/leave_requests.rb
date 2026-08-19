@@ -7,7 +7,7 @@
 # *_changing before save, act after" convention as
 # Leads#update/Lead#notify_agent_of_assignment!.
 class App::Services::LeaveRequests < App::Services::Base
-  def model; LeaveRequest; end
+  def model; AgentLeaveRequest; end
 
   def list
     ds = model.order(Sequel.desc(:created_at))
