@@ -187,10 +187,10 @@ class App::Routes < Roda
           # out, it's just toggled off.
           r.on 'referral-links' do
             r.get { ReferralLinks[r].mine }
-            r.post { ReferralLinks[r].create }
             r.on(Integer) do |id|
               r.post('deactivate') { ReferralLinks[r, id: id].deactivate }
             end
+            r.post { ReferralLinks[r].create }
           end
 
           # Read-only — the RAM's own commissions (services/commissions.rb
@@ -316,8 +316,8 @@ class App::Routes < Roda
           # fire-and-forget sync.
           r.on 'saved-properties' do
             r.get { ClientSavedProperties[r].mine }
-            r.post { ClientSavedProperties[r].create }
             r.post('remove') { ClientSavedProperties[r].destroy }
+            r.post { ClientSavedProperties[r].create }
           end
 
           # The client's own referral code + who has signed up using it — see
