@@ -14,9 +14,29 @@
 # Property is now archived by setting `publish_status: 'Archived'` directly,
 # so checking it here too would be checking the same fact twice.
 class App::Services::PublicProperties < App::Services::Properties
+  # Sold inventory has nothing left to sell, so it's excluded from the
+  # browsable/searchable list (public site, and any anonymous/guest caller)
+  # the same way Draft/Scheduled/Archived already are via
+  # publicly_visible_scope — a buyer browsing shouldn't be shown, or have
+  # recommended to them, a unit someone else already closed on.
+  #
+  # Two carve-outs, both resolved by the private helpers below:
+  #  - Agent/RAM staff's own bulk browse+filter (no `slug` requested) keeps
+  #    seeing Sold, same as before this method existed — matches their
+  #    existing status filter, which already lists "Sold" as an option.
+  #    Staff still can't reach a Sold property's own detail page, since
+  #    that's always a `slug`-scoped request (routes.rb only exposes
+  #    numeric-id lookups via #get, never by slug) and `staff_browsing?`
+  #    requires `slug` to be blank.
+  #  - Whoever actually owns the property (a real Closed Deal, checked in
+  #    owned_property_ids below) can always resolve it, by slug or in bulk —
+  #    covers the Client Portal's portfolio page (PortfolioClient.js),
+  #    which requests its own held slugs here.
   def list
     sync_due_scheduled_properties!
-    ds = apply_sort(filtered_dataset.where(publicly_visible_scope), SORTABLE_COLUMNS, default: [[:created_at, :desc]])
+    ds = filtered_dataset.where(publicly_visible_scope)
+    ds = ds.exclude(Sequel.expr(status: 'Sold') & ~Sequel.expr(id: owned_property_ids)) unless staff_browsing?
+    ds = apply_sort(ds, SORTABLE_COLUMNS, default: [[:created_at, :desc]])
     paginated_response(ds)
   end
 
@@ -25,14 +45,33 @@ class App::Services::PublicProperties < App::Services::Properties
   # PublicBuilders — a direct `GET /public/properties/:id` by numeric id.
   # Both paths must equally refuse a Draft/Scheduled(-not-yet-due)/Archived
   # property; `item` (Base#item) already 404s if the id doesn't exist at
-  # all, so this only needs to add the visibility check on top.
+  # all, so this only needs to add the visibility check on top. A Sold
+  # property is likewise refused here unless the caller actually owns it —
+  # #get is always a single-item lookup, so unlike #list above there's no
+  # "staff browsing a list" carve-out that applies.
   def get
     sync_due_scheduled_properties!
     return_errors!('Property not found.', 404) unless publicly_visible?(item)
+    return_errors!('Property not found.', 404) if item.status == 'Sold' && !owned_property_ids.include?(item.id)
     return_success(item.to_pos)
   end
 
   private
+
+  def staff_browsing?
+    qs[:slug].blank? && (App::Helpers::CurrentAgent.valid? || App::Helpers::CurrentRam.valid?)
+  end
+
+  # Real, server-verified ownership — deliberately never
+  # Client#invested_properties (admin/seed-entered jsonb with no automatic
+  # sync to real deals; see models/client.rb). A Closed Deal linking this
+  # client to this property is the one authoritative record of an actual
+  # purchase — the same record that flipped Property#status to 'Sold' in
+  # the first place (models/deal.rb#sync_property_status_for_stage!).
+  def owned_property_ids
+    return [] unless App::Helpers::CurrentClient.valid?
+    Deal.where(client_id: App::Helpers::CurrentClient.id, stage: 'Closed').exclude(property_id: nil).select_map(:property_id)
+  end
 
   # A Scheduled property becomes Published the moment its publish_at
   # arrives (per spec: "prefer updating the database status ... when the

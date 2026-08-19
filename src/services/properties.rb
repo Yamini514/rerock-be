@@ -95,7 +95,12 @@ class App::Services::Properties < App::Services::Base
     # (routes.rb's 'public' block), whose property detail pages route by
     # slug rather than the real numeric id. Harmless additive filter for
     # every other existing caller (admin list page never passes `slug`).
-    ds = ds.where(slug: qs[:slug]) if qs[:slug].present?
+    # Comma-separated (same convention as community_id/builder_id/etc. via
+    # ids_from below) so the Client Portal's portfolio page can resolve
+    # several owned holdings' slugs in one call — see
+    # PublicProperties#list's own comment on why that path must keep
+    # returning Sold properties.
+    ds = ds.where(slug: qs[:slug].to_s.split(',')) if qs[:slug].present?
     if qs[:search].present?
       ds = ds.where(Sequel.like(:title, "%#{qs[:search]}%", case_insensitive: true))
     end
