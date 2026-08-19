@@ -53,12 +53,15 @@ class App::Services::Areas < App::Services::Base
 
   # Replaces the frontend's old lib/data/areas.js `areaStats` mock (computed
   # over fixture properties/communities) with real aggregates over the live
-  # `properties`/`communities` tables — same "exclude archived, group by FK"
-  # convention as PropertyTypes#property_stats_by_type. builder_count is
-  # deliberately derived from this area's Properties (not Communities),
-  # matching the mock's own areaStats() exactly.
+  # `properties`/`communities` tables — Properties are excluded via
+  # `publish_status != 'Archived'` (the single source of truth, see
+  # models/property.rb), same convention as PropertyTypes#
+  # property_stats_by_type; Communities keep their own separate `archived`
+  # column untouched. builder_count is deliberately derived from this area's
+  # Properties (not Communities), matching the mock's own areaStats()
+  # exactly.
   def stats_by_area
-    active_properties = Property.where(archived: false)
+    active_properties = Property.exclude(publish_status: 'Archived')
     active_communities = Community.where(archived: false)
 
     property_counts = active_properties.group_and_count(:area_id).as_hash(:area_id, :count)

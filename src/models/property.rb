@@ -24,6 +24,26 @@ class App::Models::Property < Sequel::Model
     elsif column_changed?(:agent_slug)
       self.agent_id = agent_slug.present? ? App::Models::Agent.where(slug: agent_slug).first&.id : nil
     end
+
+    # `publish_status` is the single source of truth for the publishing
+    # lifecycle (Draft/Scheduled/Published/Archived) — a brand-new Property
+    # always starts as Draft. Column default of 'Draft' only covers a row
+    # that never sets the column at all; PropertyForm.js's own progressive
+    # "Save & Next" always sends `publish_status` in the payload (even
+    # before the admin has ever opened the Publish tab, where it's still
+    # "" from the unselected placeholder option), which would otherwise
+    # overwrite that column default with a blank string instead of a real
+    # lifecycle value.
+    self.publish_status = 'Draft' if new? && publish_status.blank?
+
+    # `publish_at` only ever means something for Scheduled, so this
+    # normalizes it to nil the instant any other status is chosen, the same
+    # way PropertyForm.js's own `buildPayload` already does client-side.
+    # Doing it here too (rather than trusting the client) closes the gap
+    # for CSV import, duplication, and any other caller that builds a
+    # Property payload directly.
+    self.publish_at = nil if publish_status.present? && publish_status != 'Scheduled'
+
     super
   end
 
@@ -76,6 +96,7 @@ class App::Models::Property < Sequel::Model
     errors.add(:status, "must be one of #{STATUSES.join(', ')}") if status.present? && !STATUSES.include?(status)
     errors.add(:furnishing, "must be one of #{FURNISHING_OPTIONS.join(', ')}") if furnishing.present? && !FURNISHING_OPTIONS.include?(furnishing)
     errors.add(:publish_status, "must be one of #{PUBLISH_STATUSES.join(', ')}") if publish_status.present? && !PUBLISH_STATUSES.include?(publish_status)
+    errors.add(:publish_at, 'is required when Publish Status is Scheduled') if publish_status == 'Scheduled' && publish_at.blank?
 
     if title && (new? || column_changed?(:title))
       dup = self.class.where(Sequel.function(:lower, :title) => title.strip.downcase)
@@ -96,6 +117,8 @@ class App::Models::Property < Sequel::Model
 
     validate_configuration
     validate_amenity_and_tag_ids
+    validate_property_type_not_archived
+    validate_community_not_archived
   end
 
   private
@@ -166,5 +189,35 @@ class App::Models::Property < Sequel::Model
     elsif !community.unit_types.include?(configuration)
       errors.add(:configuration, "must be one of the selected Community's Unit Types: #{community.unit_types.join(', ')}")
     end
+  end
+
+  # Archived Property Types are retired from the taxonomy (still kept as a
+  # real row so existing Properties don't lose their reference — see
+  # models/property_type.rb), so a brand-new assignment to one is rejected
+  # here the same way models/community.rb rejects a builder_id/area_id that
+  # doesn't exist. Scoped to `new? || column_changed?(:property_type_id)` —
+  # same convention as validate_amenity_and_tag_ids above — so an existing
+  # Property already on a since-archived type keeps saving normally through
+  # every other tab/action (price edits, status changes, archive/restore,
+  # etc.) without this suddenly blocking it.
+  def validate_property_type_not_archived
+    return unless property_type_id && (new? || column_changed?(:property_type_id))
+
+    property_type = App::Models::PropertyType[property_type_id]
+    errors.add(:property_type_id, 'must reference an existing Property Type') if property_type.nil?
+    errors.add(:property_type_id, 'is archived and can no longer be assigned to a Property') if property_type&.archived
+  end
+
+  # Same reasoning as validate_property_type_not_archived above, for the
+  # Community side of a Property — an archived Community can't accept a
+  # brand-new Property either. Existence of the Community itself is already
+  # checked by validate_configuration above; this only adds the archived
+  # check, scoped identically so an existing Property on a since-archived
+  # Community keeps saving normally through every other tab/action.
+  def validate_community_not_archived
+    return unless community_id && (new? || column_changed?(:community_id))
+
+    community = App::Models::Community[community_id]
+    errors.add(:community_id, 'is archived and can no longer accept new Properties') if community&.archived
   end
 end

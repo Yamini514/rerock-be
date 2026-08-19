@@ -2,15 +2,14 @@ class App::Services::Properties < App::Services::Base
   def model; Property; end
 
   # Mirrors lib/data/properties.js's own filter shape: search by title, plus
-  # exact filters for community/builder/property type/status, and the
-  # Active/Archived scope shared by every Property Catalog resource so far.
+  # exact filters for community/builder/property type/status/publish_status.
   #
-  # community_id/builder_id/property_type_id/area_id/status/bedrooms all
-  # accept a comma-separated list (Explore Properties' multi-select filters)
-  # in addition to a single value — splitting a single value is a no-op
-  # (`"3".split(',') == ["3"]`), so every existing single-value caller
-  # (admin list, property detail lookups) is unaffected.
-  SORTABLE_COLUMNS = %w[title price created_at status].freeze
+  # community_id/builder_id/property_type_id/area_id/status/publish_status/
+  # bedrooms all accept a comma-separated list (Explore Properties' multi-
+  # select filters) in addition to a single value — splitting a single value
+  # is a no-op (`"3".split(',') == ["3"]`), so every existing single-value
+  # caller (admin list, property detail lookups) is unaffected.
+  SORTABLE_COLUMNS = %w[title price created_at status publish_status].freeze
 
   def list
     ds = apply_sort(filtered_dataset, SORTABLE_COLUMNS, default: [[:created_at, :desc]])
@@ -36,11 +35,14 @@ class App::Services::Properties < App::Services::Base
     save(model.new(data))
   end
 
-  # Archive/restore (archiveProperty/restoreProperty), the featured toggle
-  # (toggleFeatured), and quick status changes are all plain flips of a
-  # column, so they ride this update below — whitelisted like any other
-  # saveable field, same pattern as every other Property Catalog resource.
-  # `tag_ids`/`amenity_ids` are plain Postgres integer[] columns (same
+  # The featured toggle (toggleFeatured) and quick status changes are plain
+  # flips of a column, so they ride this update below — whitelisted like any
+  # other saveable field, same pattern as every other Property Catalog
+  # resource. Archive/restore is likewise a plain flip, but of
+  # `publish_status` (to/from 'Archived') now — `archived` is no longer
+  # whitelisted below, see models/property.rb's own publish_status/
+  # publish_at validation for the single source of truth this replaced it
+  # with. `tag_ids`/`amenity_ids` are plain Postgres integer[] columns (same
   # precedent as Community's `amenity_ids` in migrations/0011 /
   # services/communities.rb) — no join-table code needed here either.
   def update(data = nil)
@@ -60,7 +62,7 @@ class App::Services::Properties < App::Services::Base
         :images, :highlights, :description, :floor_plans,
         :agent_slug, :agent_id, :featured, :tag_ids, :amenity_ids, :advisor_notes,
         :sales_team, :publish_status, :publish_at, :seo, :videos, :tour_360, :virtual_tour,
-        :documents, :archived,
+        :documents,
         :code, :configuration, :unit_number, :offer_price, :booking_amount, :maintenance,
         :pricing_notes, :parking, :furnishing, :advantages, :specifications
       ]
@@ -78,7 +80,11 @@ class App::Services::Properties < App::Services::Base
     # Eager-loaded so Property#to_pos's community&.rera_status merge doesn't
     # fire one extra query per row on top of this dataset's own.
     ds = model.eager(:community)
-    ds = ds.where(archived: qs[:archived].to_s == 'true') if qs.key?(:archived)
+    # Replaces the old plain `archived` boolean filter — the admin list's
+    # Active/Archived view toggle (and every other publish-state filter) now
+    # reads/writes `publish_status` exclusively, same single-source-of-truth
+    # change as models/property.rb's own validation.
+    ds = ds.where(publish_status: qs[:publish_status].to_s.split(',')) if qs[:publish_status].present?
     ds = ds.where(community_id: ids_from(qs[:community_id])) if qs[:community_id].present?
     ds = ds.where(builder_id: ids_from(qs[:builder_id])) if qs[:builder_id].present?
     ds = ds.where(property_type_id: ids_from(qs[:property_type_id])) if qs[:property_type_id].present?

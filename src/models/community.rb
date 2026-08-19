@@ -69,7 +69,7 @@ class App::Models::Community < Sequel::Model
       errors.add(:rera, "must be #{RERA_MAX_LENGTH} characters or less") if rera.length > RERA_MAX_LENGTH
     end
 
-    errors.add(:builder_id, 'must reference an existing Builder') if builder_id && App::Models::Builder[builder_id].nil?
+    validate_builder
     errors.add(:area_id, 'must reference an existing Area') if area_id && App::Models::Area[area_id].nil?
 
     errors.add(:total_units, 'must be greater than 0') if total_units && total_units <= 0
@@ -92,9 +92,44 @@ class App::Models::Community < Sequel::Model
 
     validate_floor_plans
     validate_amenity_ids
+    validate_archive_guard
   end
 
   private
+
+  # An Inactive Builder is being retired from active use (see
+  # models/builder.rb's own validate_status_change_guard) — scoped to
+  # `new? || column_changed?(:builder_id)` so an existing Community whose
+  # Builder later goes Inactive keeps saving normally through every other
+  # tab/action (pricing, amenities, archive/restore, etc.) without this
+  # suddenly blocking it, same convention as models/property.rb's
+  # validate_property_type_not_archived/validate_community_not_archived.
+  def validate_builder
+    return unless builder_id
+
+    builder = App::Models::Builder[builder_id]
+    errors.add(:builder_id, 'must reference an existing Builder') if builder.nil?
+    if builder && builder.status != 'Active' && (new? || column_changed?(:builder_id))
+      errors.add(:builder_id, 'is Inactive and cannot be assigned to a Community')
+    end
+  end
+
+  # Mirrors Base#delete's own FK-violation guard, but for the Archive action
+  # (a plain `archived` column flip, not a real delete) — a Community with
+  # live Properties still on it can't be quietly hidden out from under them.
+  # `publish_status != 'Archived'` here matches services/communities.rb#
+  # community_stats' own `property_count` (excludes already-archived
+  # Properties via the same single source of truth, see
+  # models/property.rb) — the same count the admin UI already shows before
+  # this guard ever fires.
+  def validate_archive_guard
+    return unless archived && column_changed?(:archived)
+
+    has_properties = App::Models::Property.where(community_id: id).exclude(publish_status: 'Archived').count > 0
+    if has_properties
+      errors.add(:archived, 'cannot be changed while Properties are still assigned to this Community — reassign or archive them first')
+    end
+  end
 
   # Same reasoning as models/property.rb's own validate_amenity_and_tag_ids
   # (which this predates conceptually — `amenity_ids` here is the original

@@ -128,7 +128,11 @@ class App::Services::Communities < App::Services::Base
     stars_by_community = Hash.new { |h, k| h[k] = [] }
     reviews.select(:reviewable_id, :stars).each { |r| stars_by_community[r.reviewable_id] << r.stars }
 
-    property_scope = Property.where(archived: false)
+    # `property_count` excludes Archived listings from the catalog count the
+    # same way it always did — `publish_status` is the single source of
+    # truth now (see models/property.rb), so this reads that instead of the
+    # old, now-retired `archived` boolean.
+    property_scope = Property.exclude(publish_status: 'Archived')
     property_scope = property_scope.where(community_id: community_id) if community_id
     property_counts = property_scope.group_and_count(:community_id).as_hash(:community_id, :count)
 

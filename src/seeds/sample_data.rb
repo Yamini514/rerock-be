@@ -234,39 +234,39 @@ module App
         {
           slug: "apartment", name: "Apartment", description: "Multi-storey residential units within gated communities.",
           banner: :building_modern_1, image: :building_modern_1, display_order: 1,
-          active: true, show_on_homepage: true, allow_search: true,
+          show_on_homepage: true, allow_search: true,
           seo: { title: "Apartments in Hyderabad", description: "Browse premium apartments across Hyderabad's top micro-markets." },
         },
         {
           slug: "villa", name: "Villa", description: "Independent or semi-independent houses with private land.",
           banner: :villa_exterior_1, image: :villa_exterior_1, display_order: 2,
-          active: true, show_on_homepage: true, allow_search: true,
+          show_on_homepage: true, allow_search: true,
           seo: { title: "Villas in Hyderabad", description: "Independent villas in gated communities across Hyderabad." },
         },
         {
           slug: "commercial", name: "Commercial", description: "Offices, retail spaces, and warehousing assets.",
           banner: :office_1, image: :office_1, display_order: 4,
-          active: true, show_on_homepage: true, allow_search: true,
+          show_on_homepage: true, allow_search: true,
           seo: { title: "Commercial Properties in Hyderabad", description: "Grade A offices, retail, and warehousing in Hyderabad." },
         },
         {
-          # Inactive by default — Independent House is excluded from active
-          # property type options per the admin's current taxonomy (still
-          # kept as a real row, not deleted, since existing Property rows
-          # may already reference it).
+          # Archived by default — Independent House is excluded from the
+          # taxonomy's active options per the admin's current curation
+          # (still kept as a real row, not deleted, since existing Property
+          # rows may already reference it).
           slug: "independent-house", name: "Independent House",
           description: "Standalone single-family homes, typically on smaller plots than a villa.",
           banner: :villa_exterior_2, image: :villa_exterior_2, display_order: 5,
-          active: false, show_on_homepage: false, allow_search: true,
+          show_on_homepage: false, allow_search: true, archived: true,
           seo: { title: "Independent Houses in Hyderabad", description: "Standalone homes across Hyderabad's growth corridors." },
         },
         {
-          # Inactive by default — see the Independent House comment above;
+          # Archived by default — see the Independent House comment above;
           # same reasoning applies to Farmhouse.
           slug: "farmhouse", name: "Farmhouse",
           description: "Weekend and leisure homes on larger agricultural or semi-urban land parcels.",
           banner: :garden_1, image: :garden_1, display_order: 6,
-          active: false, show_on_homepage: false, allow_search: true,
+          show_on_homepage: false, allow_search: true, archived: true,
           seo: { title: "Farmhouses near Hyderabad", description: "Weekend farmhouses and leisure land near Hyderabad." },
         },
       ].freeze
@@ -279,9 +279,9 @@ module App
             t.banner = IMG[row[:banner]]
             t.image = IMG[row[:image]]
             t.display_order = row[:display_order]
-            t.active = row[:active]
             t.show_on_homepage = row[:show_on_homepage]
             t.allow_search = row[:allow_search]
+            t.archived = row[:archived] || false
             t.seo = row[:seo]
           end
         end

@@ -78,7 +78,11 @@ class App::Services::Builders < App::Services::Base
         end
     end
 
-    property_scope = Property.where(archived: false)
+    # `property_count` excludes Archived listings from the catalog count the
+    # same way it always did — `publish_status` is the single source of
+    # truth now (see models/property.rb), so this reads that instead of the
+    # old, now-retired `archived` boolean.
+    property_scope = Property.exclude(publish_status: 'Archived')
     property_scope = property_scope.where(builder_id: builder_id) if builder_id
     property_counts = property_scope.group_and_count(:builder_id).as_hash(:builder_id, :count)
 

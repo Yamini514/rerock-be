@@ -330,9 +330,12 @@ class App::Services::Reports < App::Services::Base
 
   # Property / Community Inventory — computed report, no dedicated table.
   # Archived rows are excluded throughout, same "active only" convention the
-  # Admin Dashboard's own KPI/status widgets already use.
+  # Admin Dashboard's own KPI/status widgets already use — Properties via
+  # `publish_status != 'Archived'` (the single source of truth, see
+  # models/property.rb), Communities via their own separate `archived`
+  # column.
   def inventory
-    all_properties = Property.where(archived: false).all
+    all_properties = Property.exclude(publish_status: 'Archived').all
     all_communities = Community.where(archived: false).all
 
     property_by_status = PROPERTY_STATUS_ORDER.map { |s| { label: s, value: all_properties.count { |p| p.status == s } } }

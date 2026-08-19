@@ -59,5 +59,28 @@ class App::Models::Builder < Sequel::Model
       errors.add(:website, "must be #{WEBSITE_MAX_LENGTH} characters or less") if website.length > WEBSITE_MAX_LENGTH
       errors.add(:website, 'must be a valid URL') unless website.match?(WEBSITE_REGEXP)
     end
+
+    validate_status_change_guard
+  end
+
+  private
+
+  # An Inactive Builder is excluded from Community creation (see
+  # models/community.rb's own validate_builder) — so a Builder can't be
+  # flipped to Inactive while it's still the active parent of real
+  # Communities/Properties either, same "reassign first" guard as the
+  # existing delete-guard (services/builders.rb#builder_stats' own
+  # community_count/property_count, which this mirrors exactly).  Scoped to
+  # `column_changed?(:status)` (never fires for `new?` — nothing can
+  # reference a Builder that doesn't exist yet) so every other field on an
+  # already-Inactive Builder keeps saving normally.
+  def validate_status_change_guard
+    return unless !new? && status == 'Inactive' && column_changed?(:status)
+
+    has_communities = App::Models::Community.where(builder_id: id).count > 0
+    has_properties = App::Models::Property.where(builder_id: id).exclude(publish_status: 'Archived').count > 0
+    if has_communities || has_properties
+      errors.add(:status, 'cannot be set to Inactive while Communities or Properties are still assigned to this Builder — reassign or archive them first')
+    end
   end
 end

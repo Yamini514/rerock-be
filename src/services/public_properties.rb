@@ -4,9 +4,15 @@
 # filters) and #create/#update-derived #to_pos shape unchanged, just scoped
 # to properties that are actually live on the public site. Properties#list/
 # #get (the admin CRUD version, still mounted separately for staff) must
-# keep showing every publish_status/archived state so admins can manage
-# Draft/Scheduled/Archived properties — this public mount must never leak
-# those. See models/property.rb's PUBLISH_STATUSES for the full state set.
+# keep showing every publish_status so admins can manage Draft/Scheduled/
+# Archived properties — this public mount must never leak those. See
+# models/property.rb's PUBLISH_STATUSES for the full state set.
+#
+# `publish_status` is the single source of truth for public visibility —
+# the old, second `archived` boolean this scope used to also check has been
+# retired from that role (see models/property.rb and migrations/0097); a
+# Property is now archived by setting `publish_status: 'Archived'` directly,
+# so checking it here too would be checking the same fact twice.
 class App::Services::PublicProperties < App::Services::Properties
   def list
     sync_due_scheduled_properties!
@@ -40,19 +46,19 @@ class App::Services::PublicProperties < App::Services::Properties
   def sync_due_scheduled_properties!
     model.where(publish_status: 'Scheduled')
          .where { publish_at <= Sequel::CURRENT_TIMESTAMP }
-         .update(publish_status: 'Published')
+         .update(publish_status: 'Published', publish_at: nil)
   end
 
-  # Published-and-not-archived is public. A Scheduled property only
-  # qualifies once sync_due_scheduled_properties! has already flipped it to
-  # Published above, so this scope itself never needs to inspect
-  # `publish_at` — by the time it runs, "Scheduled but due" no longer
-  # exists as a state in the table.
+  # Published is public — full stop. A Scheduled property only qualifies
+  # once sync_due_scheduled_properties! has already flipped it to Published
+  # above, so this scope itself never needs to inspect `publish_at` — by the
+  # time it runs, "Scheduled but due" no longer exists as a state in the
+  # table.
   def publicly_visible_scope
-    Sequel.expr(publish_status: 'Published') & Sequel.expr(archived: false)
+    Sequel.expr(publish_status: 'Published')
   end
 
   def publicly_visible?(property)
-    property && property.publish_status == 'Published' && !property.archived
+    property && property.publish_status == 'Published'
   end
 end
