@@ -167,22 +167,19 @@ class App::Models::Client < Sequel::Model
       from    'apps@srinishtha.com'
       to      client_email
       subject 'Reset your REROCK Realty password'
-      html_part do
-        content_type 'text/html; charset=UTF-8'
-        body <<-HTML
-          <html>
-          <body>
-            <h1>Reset your password</h1>
-            <p>Hello #{client_name},</p>
-            <p>We received a request to reset your REROCK Realty client portal password. Click the link below to reset it:</p>
-            <p><a href="#{reset_url}">Reset your password</a></p>
-            <p>If you did not request a password reset, please ignore this email.</p>
-            <p>Thank you,<br/>REROCK Realty</p>
-          </body>
-          </html>
-        HTML
-      end
     end
+
+    App::MailerTemplate.brand!(
+      mail,
+      preheader: "We received a request to reset your REROCK Realty password.",
+      body_html: <<~HTML,
+        <h2 style="margin:0 0 12px; font-size:20px; color:#1c1b1a;">Reset your password</h2>
+        <p style="margin:0 0 8px;">Hello #{client_name},</p>
+        <p style="margin:0;">We received a request to reset your REROCK Realty client portal password. Use the button below to choose a new one — this link expires shortly for your security.</p>
+      HTML
+      cta: { label: 'Reset your password', url: reset_url },
+      footnote: 'If you did not request a password reset, you can safely ignore this email — your password will not be changed.'
+    )
 
     mail.deliver!
   end
@@ -241,22 +238,20 @@ class App::Models::Client < Sequel::Model
       from    'apps@srinishtha.com'
       to      client_email
       subject 'Verify your REROCK Realty account'
-      html_part do
-        content_type 'text/html; charset=UTF-8'
-        body <<-HTML
-          <html>
-          <body>
-            <h1>Verify your email</h1>
-            <p>Hello #{client_name},</p>
-            <p>Your verification code is:</p>
-            <p style="font-size: 28px; font-weight: bold; letter-spacing: 4px;">#{code}</p>
-            <p>This code expires in 10 minutes. If you did not create a REROCK Realty account, please ignore this email.</p>
-            <p>Thank you,<br/>REROCK Realty</p>
-          </body>
-          </html>
-        HTML
-      end
     end
+
+    App::MailerTemplate.brand!(
+      mail,
+      preheader: "Your REROCK Realty verification code is #{code}",
+      body_html: <<~HTML,
+        <h2 style="margin:0 0 12px; font-size:20px; color:#1c1b1a;">Verify your email</h2>
+        <p style="margin:0 0 4px;">Hello #{client_name},</p>
+        <p style="margin:0;">Use the code below to verify your REROCK Realty client portal account:</p>
+        #{App::MailerTemplate.code_block(code)}
+        <p style="margin:0; font-size:13px; color:#6b6b6b;">This code expires in 10 minutes.</p>
+      HTML
+      footnote: 'If you did not create a REROCK Realty account, you can safely ignore this email.'
+    )
 
     mail.deliver!
   end

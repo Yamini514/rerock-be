@@ -77,6 +77,14 @@ class App::Models::Community < Sequel::Model
     if total_units && available_units && available_units > total_units && (new? || column_changed?(:total_units) || column_changed?(:available_units))
       errors.add(:available_units, 'cannot be greater than Total Units')
     end
+    # Plain Postgres text[] (migrations/0011), not a presence-checkable
+    # scalar column — `validates_presence` above wouldn't catch an empty
+    # array, so this is checked the same way property.rb's own `images`
+    # array is. Every Property's own Configuration is validated against
+    # this list (models/property.rb#validate_configuration), so a Community
+    # with none configured would otherwise be impossible to list any real
+    # unit against.
+    errors.add(:unit_types, 'add at least one Unit Type') if unit_types.nil? || unit_types.empty?
     errors.add(:price_min, 'must be greater than 0') if price_min && price_min <= 0
     validates_operator(:>=, 0, :price_max) if price_max
     if price_min && price_max && price_max < price_min && (new? || column_changed?(:price_min) || column_changed?(:price_max))
