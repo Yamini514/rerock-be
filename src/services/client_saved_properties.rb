@@ -19,7 +19,7 @@ class App::Services::ClientSavedProperties < App::Services::Base
     client = CurrentClient.client_obj
     return_errors!("Not signed in.", 401) if client.nil?
 
-    kind = params[:kind].presence
+    kind = qs[:kind].presence
     return_errors!("Invalid kind.", 400) if kind.present? && !KINDS.include?(kind)
 
     return_success(scope(client.id, kind).map { |sp| property_brief(sp) })
