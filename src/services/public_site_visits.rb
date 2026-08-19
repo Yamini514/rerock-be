@@ -40,14 +40,26 @@ class App::Services::PublicSiteVisits < App::Services::Base
     end
     return_errors!("Preferred date can't be in the past.", 400) if parsed_date < Date.today
 
-    # Same duplicate-active-lead guard services/leads.rb#create and
-    # services/ram_portal.rb#create_my_lead already use — this guest path
-    # built its own fresh Lead directly and skipped it entirely, so nothing
-    # stopped a double-click, page refresh, or repeated submission from the
-    # same phone number from creating a new Lead + SiteVisit pair every time.
-    return_errors!("A site visit request for this phone number is already in progress — our team will reach out shortly.", 409) if Lead.duplicate_active?(phone)
-
     property = property_slug.present? ? Property.first(slug: property_slug) : nil
+
+    # A guest who already has an open enquiry (from an earlier site-visit
+    # request, brochure download, etc.) used to get hard-blocked here with a
+    # 409 on every repeat submission for the same phone number — including a
+    # second, different-date/different-slot visit request made *after*
+    # their first one had already been confirmed — until the original Lead
+    # reached Closed/Lost or its own 60-day validity window lapsed
+    # (Lead::VALIDITY_DAYS). Reuse that existing Lead for the new SiteVisit
+    # instead: still one real contact, still protected against a
+    # double-click/refresh spawning a duplicate Lead (see Lead#active_for_phone),
+    # but no longer wrongly blocking a legitimate repeat visitor. Referral
+    # attribution only ever applies to a brand-new Lead (see
+    # Base#create_referral_with_lead!'s own "first accepted referral owns
+    # the customer" rule), so a repeat guest's referral_code, if any, is
+    # ignored here — same reasoning services/client_site_visits.rb#create
+    # already uses to drop a link once a client has an active referral.
+    existing_lead = Lead.active_for_phone(phone)
+    return finalize_site_visit!(existing_lead, property, name, date, time) if existing_lead
+
     link = referral_code.present? ? ReferralLink.where(code: referral_code, active: true).first : nil
 
     if link
@@ -59,7 +71,7 @@ class App::Services::PublicSiteVisits < App::Services::Base
         type: "Referral Link", source: "Referral Link", referral_link_id: link.id,
         budget: budget
       )
-      Notification.create(
+      notify_safely!(
         audience: "admin",
         type: "referral",
         icon: "Gift",
@@ -98,7 +110,7 @@ class App::Services::PublicSiteVisits < App::Services::Base
     )
 
     save(visit) do
-      Notification.create(
+      notify_safely!(
         audience: "admin",
         type: "visit",
         icon: "CalendarCheck",

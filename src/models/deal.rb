@@ -162,4 +162,52 @@ class App::Models::Deal < Sequel::Model
       message: "Congratulations! Your purchase#{property_name.present? ? " of #{property_name}" : ""} has been finalized."
     )
   end
+
+  # Closing a Deal is also the moment it becomes a real purchase on the
+  # client's own record — nothing wired this up before. Client#invested_properties
+  # (what the Client Portal's own Portfolio page reads — app/portal/(dashboard)/
+  # portfolio/PortfolioClient.js) was only ever set by hand, once, when an
+  # admin created the Client row in the first place (ClientForm.js's own
+  # one-time seed on create) — closing a deal for an existing client never
+  # touched it, so a real, closed sale silently never showed up in that
+  # client's own Portfolio. Called unconditionally after every save
+  # (services/deals.rb#update), same "explicit call after save, guard by
+  # idempotency" convention as ensure_commission_for_closure! above — guarded
+  # here by "does this client already have an entry for this exact
+  # property" so re-saving an already-Closed deal (e.g. editing notes) never
+  # appends a second one. Deliberately does NOT try to *remove* the entry if
+  # the deal is later reopened (moved off Closed) — unlike
+  # #sync_property_status_for_stage!'s property-status revert, there's no
+  # deal_id stored per invested_properties entry to safely tell "this is the
+  # one I added" apart from one an admin added by hand, so removing here
+  # risks deleting real data instead of just undoing this method's own work.
+  def sync_client_investment!
+    return unless stage == 'Closed'
+    return if client_id.nil? || property_id.nil?
+
+    client = self.client
+    return if client.nil?
+
+    existing = client.invested_properties || []
+    return if existing.any? { |h| (h['propertyId'] || h[:propertyId]).to_i == property_id }
+
+    prop = property
+    entry = {
+      'propertyId' => property_id,
+      'slug' => prop&.slug,
+      'purchasePrice' => value.to_i,
+      'currentValue' => value.to_i,
+      'purchaseDate' => (closing_date || Date.today).to_s
+    }
+
+    client.invested_properties = existing + [entry]
+    client.save_changes(validate: false)
+  rescue => e
+    # Same "must never fail the real operation that already succeeded"
+    # contract as Base#write_audit_log!/Communities#record_price_history! —
+    # a broken write here must not surface as a failure of the deal closure
+    # itself.
+    App.logger.error("[Deal] sync_client_investment! failed for Deal ##{id}: #{e.message}")
+    App.logger.error(e.backtrace)
+  end
 end

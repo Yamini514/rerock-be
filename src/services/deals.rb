@@ -66,10 +66,12 @@ class App::Services::Deals < App::Services::Base
 
   # Stage moves (the Kanban board's inline stage Select) and probability/
   # value/closing-date edits all ride the standard PUT/update below —
-  # overridden only to run Deal#ensure_commission_for_closure! and
-  # #notify_client_of_closure! after a successful save, same "call
-  # unconditionally, guard idempotently/by-actual-change" convention as
-  # SiteVisits#update's own ensure_deal_for_completion! call.
+  # overridden only to run Deal#ensure_commission_for_closure!,
+  # #ensure_agent_commission_for_closure!, #sync_property_status_for_stage!,
+  # #notify_client_of_closure!, and #sync_client_investment! after a
+  # successful save, same "call unconditionally, guard idempotently/by-
+  # actual-change" convention as SiteVisits#update's own
+  # ensure_deal_for_completion! call.
   def update(data = nil)
     data ||= data_for(:save)
     stage_changing = data.key?(:stage) && data[:stage] != item.stage
@@ -79,6 +81,7 @@ class App::Services::Deals < App::Services::Base
       o.ensure_agent_commission_for_closure!
       o.sync_property_status_for_stage!
       o.notify_client_of_closure!
+      o.sync_client_investment!
       DealStatusHistory.create(deal_id: o.id, status: o.stage, changed_by: audit_changed_by, notes: params[:status_note].presence) if stage_changing
       return_success(o.with_status_history)
     end

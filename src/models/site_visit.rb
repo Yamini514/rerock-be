@@ -36,9 +36,39 @@ class App::Models::SiteVisit < Sequel::Model
   # Community#status/Lead#status.
   STATUSES = ['Pending', 'Scheduled', 'Completed', 'Cancelled', 'Rescheduled'].freeze
 
+  # These three represent an appointment that hasn't happened yet — Completed
+  # is exempt (it already happened, see the future-date check below) and so
+  # is Cancelled (it just carries whatever date it was originally booked
+  # for; cancelling one doesn't require picking a new date).
+  FUTURE_REQUIRED_STATUSES = ['Pending', 'Scheduled', 'Rescheduled'].freeze
+
   def validate
     super
     errors.add(:status, "must be one of #{STATUSES.join(', ')}") if status.present? && !STATUSES.include?(status)
+
+    # Completed is terminal — the visit already happened and, per
+    # #ensure_deal_for_completion! below, may have already spawned a real
+    # Deal off it. Nothing stopped an admin from then dragging it back to
+    # Scheduled/Cancelled/Rescheduled afterward, which would misrepresent a
+    # visit that already occurred and desyncs from that already-created
+    # Deal. Scoped to an actual status change on an existing record (not
+    # `new?` — a visit can't be created already-Completed-then-changed in
+    # the same request) and only to the `status` field itself: notes/date/
+    # time edits on an already-Completed visit stay allowed, same as
+    # #ensure_deal_for_completion!'s own "re-saving a Completed visit to
+    # edit notes must not create a second Deal" idempotency comment implies.
+    if !new? && column_changed?(:status)
+      old_status, = column_change(:status)
+      errors.add(:status, "can't be changed — this site visit is already Completed") if old_status == 'Completed'
+    end
+
+    # An admin could reschedule a Pending/Scheduled/Rescheduled visit to a
+    # date that's already passed — nothing rejected it. Scoped to the date
+    # (or the status) actually changing so an unrelated notes-only edit on a
+    # legacy row that predates this check never starts failing.
+    if FUTURE_REQUIRED_STATUSES.include?(status) && date.present? && (new? || column_changed?(:date) || column_changed?(:status))
+      errors.add(:date, "can't be in the past") if date < Date.today
+    end
 
     # Nothing stopped a visit dated next week from being marked Completed
     # today — which would also wrongly fire ensure_deal_for_completion!
