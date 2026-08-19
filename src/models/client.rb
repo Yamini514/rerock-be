@@ -75,6 +75,17 @@ class App::Models::Client < Sequel::Model
     to_pos.merge('status_history' => status_history)
   end
 
+  # Property ids this client has actually purchased (invested_properties,
+  # migrations/0017) — shared by anything that needs to tell "does this
+  # client already own this property" apart from just being interested in
+  # it: services/client_reviews.rb's own review-ownership check, and
+  # services/client_site_visits.rb's "don't let someone re-book a site
+  # visit on a property they already bought" guard. Was previously
+  # duplicated as a private method inside client_reviews.rb alone.
+  def owned_property_ids
+    (invested_properties || []).map { |p| p['propertyId'] || p[:propertyId] }.compact.map(&:to_i)
+  end
+
   EMAIL_REGEXP = /\A[^\s@]+@[^\s@]+\.[^\s@]+\z/
 
   # Defense-in-depth under the admin Clients form's / client-portal

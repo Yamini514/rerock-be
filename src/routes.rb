@@ -547,6 +547,15 @@ class App::Routes < Roda
           r.get { HomepageSettings[r].get }
         end
 
+        # Singleton Contact info row (phone/email/office address/map
+        # coordinates) — read-only here, same reasoning as
+        # homepage-settings above; #update stays admin-only. Powers the
+        # public Contact page/Footer instead of the old hardcoded
+        # lib/seo.js siteConfig values. See services/contact_settings.rb.
+        r.on 'contact-settings' do
+          r.get { ContactSettings[r].get }
+        end
+
         # Minimal safe-fields agent directory (see services/public_agents.rb
         # — never Agents' own #to_pos, which dumps encoded_password/
         # commission data) — needed by the property-detail and Contact
@@ -915,6 +924,14 @@ class App::Routes < Roda
         r.on 'homepage-settings' do
           r.get { HomepageSettings[r].get }
           r.put { HomepageSettings[r].update }
+        end
+
+        # Contact info — Settings > Company tab's own plain GET/PUT pair,
+        # same "no id segment, singleton resolves itself" reasoning as
+        # homepage-settings above. See services/contact_settings.rb.
+        r.on 'contact-settings' do
+          r.get { ContactSettings[r].get }
+          r.put { ContactSettings[r].update }
         end
 
         # Audit Logs — read-only: this is a polymorphic database change log
