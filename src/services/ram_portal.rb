@@ -136,8 +136,10 @@ class App::Services::RamPortal < App::Services::Base
     return_errors!("Referred person's email address is required.", 400) if params[:client_email].blank?
 
     # Referral Date and Time — defaults to now (same as before this field
-    # existed) when the form leaves it blank; rejects a future timestamp
-    # since a referral can't be logged before it happened.
+    # existed) when the form leaves it blank; rejects a backdated timestamp
+    # since it can't be used to log a referral earlier than when it's
+    # actually being entered. A 60s grace window absorbs form-fill/network
+    # latency between the picker's "now" and this request landing.
     referral_date = nil
     if params[:date].present?
       referral_date = begin
@@ -146,7 +148,7 @@ class App::Services::RamPortal < App::Services::Base
         nil
       end
       return_errors!("Enter a valid referral date and time.", 400) if referral_date.nil?
-      return_errors!("Referral date and time can't be in the future.", 400) if referral_date > Time.now
+      return_errors!("Referral date and time can't be in the past.", 400) if referral_date < Time.now - 60
     end
 
     lead, referral, property, agent_slug = create_referral_with_lead!(

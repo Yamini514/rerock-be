@@ -367,7 +367,69 @@ class App::Services::AgentPortal < App::Services::Base
     return_success(summary: summary, monthly: monthly)
   end
 
+  # Leave requests the agent has submitted for admin review — see
+  # services/leave_requests.rb#update for the approve/reject side.
+  def my_leave_requests
+    agent = current_agent
+    return_errors!("Not signed in.", 401) if agent.nil?
+
+    return_success(LeaveRequest.where(agent_id: agent.id).order(Sequel.desc(:created_at)).all.map(&:to_pos))
+  end
+
+  # Real leave requests always originate here, never via the admin-facing
+  # LeaveRequests#create — `agent_id`/`status` are server-set, never trusted
+  # from the client, same "an agent can't reassign who owns this record"
+  # reasoning as create_my_site_visit above.
+  def create_my_leave_request
+    agent = current_agent
+    return_errors!("Not signed in.", 401) if agent.nil?
+
+    start_date = parse_date(params[:start_date])
+    end_date = parse_date(params[:end_date])
+    return_errors!("Enter a valid start and end date.", 400) if start_date.nil? || end_date.nil?
+    return_errors!("End date can't be before the start date.", 400) if end_date < start_date
+    return_errors!("Start date can't be in the past.", 400) if start_date < Date.today
+
+    leave = LeaveRequest.new(
+      agent_id: agent.id,
+      start_date: start_date,
+      end_date: end_date,
+      leave_type: LeaveRequest::TYPES.include?(params[:leave_type]) ? params[:leave_type] : 'Leave',
+      reason: params[:reason]&.strip.presence,
+      status: 'Pending'
+    )
+    save(leave) do |o|
+      o.notify_admin_of_request!
+      return_success(o.to_pos)
+    end
+  end
+
+  # Lets an agent withdraw their own request while it's still awaiting a
+  # decision — same "only your own" reasoning as update_my_lead/
+  # update_my_deal above, narrowed further to Pending only since an
+  # Approved/Rejected request is already a closed admin decision.
+  def cancel_my_leave_request
+    agent = current_agent
+    return_errors!("Not signed in.", 401) if agent.nil?
+
+    leave = LeaveRequest[rp[:id]]
+    return_errors!("Leave request not found.", 404) if leave.nil?
+    return_errors!("This leave request isn't yours.", 403) unless leave.agent_id == agent.id
+    return_errors!("Only a pending request can be cancelled.", 400) unless leave.status == 'Pending'
+
+    leave.status = 'Cancelled'
+    save(leave) { |o| return_success(o.to_pos) }
+  end
+
   private
+
+  def parse_date(value)
+    return nil if value.blank?
+
+    Date.parse(value.to_s)
+  rescue ArgumentError, TypeError
+    nil
+  end
 
   def month_key(date_or_time)
     date_or_time&.strftime("%Y-%m")

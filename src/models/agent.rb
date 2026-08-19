@@ -83,7 +83,7 @@ class App::Models::Agent < Sequel::Model
     if new? || column_changed?(:date_of_birth)
       errors.add(:date_of_birth, "Can't be blank") if date_of_birth.nil?
     end
-    errors.add(:date_of_birth, "must result in an age under 49") if date_of_birth.present? && age && age >= 49
+    errors.add(:date_of_birth, "must result in an age between 18 and 49") if date_of_birth.present? && age && !age.between?(18, 49)
 
     validate_strong_area_ids
   end
@@ -113,10 +113,10 @@ class App::Models::Agent < Sequel::Model
   end
 
   # Derived from date_of_birth, not a stored/directly-typed column (see
-  # migrations/0086) — this is what #validate's "must result in an age under
-  # 49" check above reads, and what Agent#as_pos exposes as `age` to every
-  # existing caller (Admin Portal, Agent Portal) unchanged. nil when
-  # date_of_birth isn't set (a legacy record predating this rule).
+  # migrations/0086) — this is what #validate's "must result in an age
+  # between 18 and 49" check above reads, and what Agent#as_pos exposes as
+  # `age` to every existing caller (Admin Portal, Agent Portal) unchanged.
+  # nil when date_of_birth isn't set (a legacy record predating this rule).
   def age
     return nil if date_of_birth.nil?
 

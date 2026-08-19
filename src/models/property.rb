@@ -113,6 +113,12 @@ class App::Models::Property < Sequel::Model
       errors.add(field, 'must be between 0 and 20') if value && !value.between?(0, 20)
     end
 
+    # Optional per-property override of the RAM commission rate
+    # (migrations/0099) — see Deal#ensure_commission_for_closure!'s own
+    # comment for the fallback chain this feeds into. Nil just means "use
+    # the referring RAM's own default rate instead."
+    errors.add(:commission_rate, 'must be between 0 and 100') if commission_rate && !commission_rate.between?(0, 100)
+
     errors.add(:images, 'add at least one photo') if images.nil? || images.empty?
 
     validate_configuration

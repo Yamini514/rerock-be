@@ -54,12 +54,12 @@ class App::Services::RamAuth < App::Services::Base
       status: "Pending",
       profession: profession,
       date_of_birth: date_of_birth,
-      # Commission rate is admin-configured, never self-picked at
-      # registration — seeded with the platform default (same fallback
-      # Deal#ensure_commission_for_closure! already uses) so this record
-      # satisfies RamMember#validate's mandatory check immediately, and an
-      # admin can override it later from the RAM Details Edit form.
-      default_commission_rate: Deal::DEFAULT_COMMISSION_RATE_PCT,
+      # No default_commission_rate seeded here (RamMember#validate no
+      # longer requires it) — commission rate is set per-property now
+      # instead (Property#commission_rate, migrations/0099), which takes
+      # priority anyway; leaving this nil just falls through to the flat
+      # Deal::DEFAULT_COMMISSION_RATE_PCT, same as an admin-created RAM
+      # with no rate of their own.
       profile_extra: { phone: phone, referralCode: params[:referral_code] }.compact
     )
     ram.password = password

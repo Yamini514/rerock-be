@@ -34,12 +34,15 @@ class App::Services::RamMembers < App::Services::Base
   # existing self-registration flow (RamAuth#register, which lands as
   # `status: "Pending"` awaiting approval). An admin-created account is
   # already vetted by the admin creating it, so this skips that gate
-  # entirely: real password, generated here, never typed by the admin and
-  # never shown in the admin UI — same exact pattern as
-  # Client#send_temporary_password_email (services/clients.rb#create).
-  # `must_change_password` forces one real password change before the temp
-  # one can be reused indefinitely (RamAuth#update_password/#reset_password
-  # clear the flag once that happens).
+  # entirely: real password, generated here, emailed the same way
+  # Client#send_temporary_password_email does (services/clients.rb#create),
+  # and also handed back once in this response so the admin can copy/share
+  # it themselves without having to go dig it out of the RAM's inbox — it's
+  # never persisted anywhere in plaintext and never returned again after
+  # this one response (a later `get`/`list` never includes it). `must_change_
+  # password` forces one real password change before the temp one can be
+  # reused indefinitely (RamAuth#update_password/#reset_password clear the
+  # flag once that happens).
   def create
     ram = RamMember.new(data_for(:save))
     ram.status = "Active" if ram.status.blank?
@@ -58,7 +61,7 @@ class App::Services::RamMembers < App::Services::Base
         App.logger.error("[RamMembers#create] temp password email failed for ram_member ##{o.id}: #{e.message}")
         App.logger.error(e.backtrace)
       end
-      return_success(o.to_pos)
+      return_success(o.to_pos.merge('temp_password' => temp_password))
     end
   end
 

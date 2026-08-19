@@ -598,7 +598,11 @@ module App
             l.last_follow_up = row[:last_follow_up]
             l.next_follow_up = row[:next_follow_up]
             l.agent_slug = row[:agent_slug]
-            l.ram_id = row[:ram_id]
+            # Same "ram1"/"ram2"/"ram3" mock_id-vs-real-slug mismatch as
+            # CLIENT_ROWS_KEEP's own assigned_ram_id above — SD::LEADS'
+            # ram_id is the mock_id, not a real RamMember#slug, so it needs
+            # the same RAM_SLUG_BY_MOCK_ID translation.
+            l.ram_id = RAM_SLUG_BY_MOCK_ID[row[:ram_id]]
             l.timeline = row[:timeline]
           end
         end
@@ -670,6 +674,23 @@ module App
       def seed_referrals!
         SD.seed_referrals!
         keep_first!(App::Models::Referral, 5)
+        # SD.seed_referrals! copies SD::REFERRALS' `ram_id` through unchanged
+        # (same "mock_id, not a real RamMember#slug" mismatch as
+        # CLIENT_ROWS_KEEP's own assigned_ram_id / seed_leads!'s own ram_id
+        # above) — unlike Client#validate, Referral has no server-side check
+        # that would catch this, so it silently seeds successfully with the
+        # wrong string. That wrong value then flows straight into
+        # Commission#ram_id (seed_commissions! below just copies
+        # `ref.ram_id` verbatim), which is what left every seeded
+        # Commission#ram_member_id nil (RamMember.where(slug: "ram2") never
+        # matches) and made the Admin Commissions page fall back to
+        # showing the raw "ram1"/"ram2" string instead of the RAM's real
+        # name. Fixed the same way, after the fact since SD.seed_referrals!
+        # doesn't take a translation hook.
+        App::Models::Referral.all.each do |ref|
+          real_slug = RAM_SLUG_BY_MOCK_ID[ref.ram_id]
+          ref.update(ram_id: real_slug) if real_slug && real_slug != ref.ram_id
+        end
         puts "Trimmed referrals: #{App::Models::Referral.count}"
       end
 

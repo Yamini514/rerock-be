@@ -42,13 +42,25 @@ class App::Services::Deals < App::Services::Base
       client = Client[data[:client_id]]
       data[:client_name] = client.name if client
     end
-    if data[:property_name].blank? && data[:property_id].present?
-      property = Property[data[:property_id]]
-      data[:property_name] = property.title if property
-    end
     if data[:referral_id].blank? && data[:client_id].present?
       referral = Referral.where(client_id: data[:client_id]).exclude(status: ["Purchase Completed", "Cancelled"]).first
       data[:referral_id] = referral.id if referral
+    end
+    # property_id resolved BEFORE property_name below, and from the
+    # referral rather than left to whatever the admin separately typed —
+    # otherwise a manually-created Deal for a referred client could end up
+    # pointed at a different property than the one actually referred, and
+    # Deal#ensure_commission_for_closure!'s rate would then silently follow
+    # that other property's own commission_rate instead of the referred
+    # one's. An admin can still pass an explicit property_id to override
+    # this guess (e.g. the client ultimately bought something else).
+    if data[:property_id].blank? && data[:referral_id].present?
+      referral = Referral[data[:referral_id]]
+      data[:property_id] = referral.property_id if referral&.property_id
+    end
+    if data[:property_name].blank? && data[:property_id].present?
+      property = Property[data[:property_id]]
+      data[:property_name] = property.title if property
     end
     # Which Lead produced this Deal — same "derive from the real FK already
     # in hand" reasoning as client_name/property_name/referral_id above.

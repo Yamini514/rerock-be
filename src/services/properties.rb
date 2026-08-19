@@ -64,7 +64,7 @@ class App::Services::Properties < App::Services::Base
         :sales_team, :publish_status, :publish_at, :seo, :videos, :tour_360, :virtual_tour,
         :documents,
         :code, :configuration, :unit_number, :offer_price, :booking_amount, :maintenance,
-        :pricing_notes, :parking, :furnishing, :advantages, :specifications
+        :pricing_notes, :parking, :furnishing, :advantages, :specifications, :commission_rate
       ]
     }
   end

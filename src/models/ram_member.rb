@@ -1,25 +1,28 @@
 class App::Models::RamMember < Sequel::Model
   include BCrypt
 
-  # Full Name/Email/Contact Number/Commission Rate are the RAM record's
-  # mandatory core fields. Contact number and commission rate aren't real
-  # columns (phone lives in profile_extra's jsonb, see #extract_phone;
-  # commission rate is the real `default_commission_rate` column) so their
-  # presence can't be expressed via `validates_presence`. Both checks are
-  # scoped to `new? || column_changed?(...)` rather than firing unconditionally
-  # on every save — this is what lets a plain status-only PUT (Approve/
+  # Full Name/Email/Contact Number are the RAM record's mandatory core
+  # fields. Contact number isn't a real column (phone lives in
+  # profile_extra's jsonb, see #extract_phone), so its presence can't be
+  # expressed via `validates_presence`. That check is scoped to
+  # `new? || column_changed?(...)` rather than firing unconditionally on
+  # every save — this is what lets a plain status-only PUT (Approve/
   # Activate/Deactivate, see services/ram_members.rb#update) keep working on
   # a legacy record that predates this rule without ever having to touch the
   # field it doesn't have; the moment someone actually edits that field, it
   # has to resolve to a non-blank value.
+  #
+  # `default_commission_rate` (migrations/0061) is deliberately NOT required
+  # — commission rate is now set per-property instead (Property#
+  # commission_rate, migrations/0099), which takes priority anyway (see
+  # Deal#ensure_commission_for_closure!'s fallback chain); a RAM with no
+  # default rate of their own just falls through to the flat
+  # Deal::DEFAULT_COMMISSION_RATE_PCT.
   def validate
     super
     validates_presence [:name, :email]
     validates_unique(:email)
 
-    if new? || column_changed?(:default_commission_rate)
-      errors.add(:default_commission_rate, "Can't be blank") if default_commission_rate.nil?
-    end
     if new? || column_changed?(:profile_extra)
       errors.add(:phone, "Can't be blank") if extract_phone.blank?
     end
@@ -29,12 +32,12 @@ class App::Models::RamMember < Sequel::Model
     if new? || column_changed?(:date_of_birth)
       errors.add(:date_of_birth, "Can't be blank") if date_of_birth.nil?
     end
-    errors.add(:date_of_birth, "must result in an age under 49") if date_of_birth.present? && age && age >= 49
+    errors.add(:date_of_birth, "must result in an age between 18 and 49") if date_of_birth.present? && age && !age.between?(18, 49)
   end
 
   # Derived from date_of_birth, not a stored/directly-typed column (see
   # migrations/0087, mirroring Agent#age/migrations/0086) — this is what
-  # #validate's "must result in an age under 49" check above reads, and what
+  # #validate's "must result in an age between 18 and 49" check above reads, and what
   # #as_pos exposes as `age` to every existing caller unchanged. nil when
   # date_of_birth isn't set (a legacy record predating this rule).
   def age

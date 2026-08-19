@@ -60,9 +60,14 @@ class App::Models::Deal < Sequel::Model
   # Calculation" step of the RAM referral flow the moment a deal tied to a
   # real Referral reaches Closed (whether it reached Closed via a later
   # stage move, or was created already Closed): computed math only (sale
-  # value × a flat rate), landing as PENDING — every subsequent lifecycle
-  # step (eligible/approved/processing/paid/rejected) stays an explicit
-  # admin decision via services/commissions.rb, never automatic.
+  # value × a rate), landing as PENDING — every subsequent lifecycle step
+  # (eligible/approved/processing/paid/rejected) stays an explicit admin
+  # decision via services/commissions.rb, never automatic.
+  #
+  # Rate priority: the specific Property's own `commission_rate`
+  # (migrations/0099) first — it's the more specific override when an
+  # admin has set one — then the referring RAM's own `default_commission_
+  # rate` (migrations/0061), then the flat DEFAULT_COMMISSION_RATE_PCT.
   def ensure_commission_for_closure!
     return unless stage == 'Closed'
     return if referral_id.nil?
@@ -72,7 +77,7 @@ class App::Models::Deal < Sequel::Model
     return if ref.nil? || ref.ram_id.blank?
 
     ram = App::Models::RamMember.where(slug: ref.ram_id).first
-    rate = ram&.default_commission_rate.presence || DEFAULT_COMMISSION_RATE_PCT
+    rate = property&.commission_rate.presence || ram&.default_commission_rate.presence || DEFAULT_COMMISSION_RATE_PCT
     amount = (value.to_i * rate / 100.0).round
 
     commission = App::Models::Commission.create(
