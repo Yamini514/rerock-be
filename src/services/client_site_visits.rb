@@ -53,24 +53,35 @@ class App::Services::ClientSiteVisits < App::Services::Base
     )
 
     save(lead) do |saved_lead|
+      # Referral attribution here is supplementary to the visit the client
+      # actually asked to book — it must never be able to fail the request
+      # over something in this optional side path, especially now that
+      # Base#save's own rescue only guards the object it was actually asked
+      # to save (see that method's comment): an unrescued exception here
+      # would otherwise propagate raw past the already-committed Lead.
       if link
-        ram = RamMember.where(slug: link.ram_id).first
-        referral = Referral.new(
-          ram_id: link.ram_id,
-          type: "Referral Link",
-          referrer: ram&.name || "Referral Link",
-          referred: client.name,
-          client_id: client.id,
-          property_id: property&.id,
-          lead_id: saved_lead.id,
-          referral_link_id: link.id,
-          status: "Enquiry Stage",
-          reward: 0,
-          date: Time.now
-        )
-        if referral.valid?
-          referral.save(validate: false)
-          write_audit_log!(referral, true)
+        begin
+          ram = RamMember.where(slug: link.ram_id).first
+          referral = Referral.new(
+            ram_id: link.ram_id,
+            type: "Referral Link",
+            referrer: ram&.name || "Referral Link",
+            referred: client.name,
+            client_id: client.id,
+            property_id: property&.id,
+            lead_id: saved_lead.id,
+            referral_link_id: link.id,
+            status: "Enquiry Stage",
+            reward: 0,
+            date: Time.now
+          )
+          if referral.valid?
+            referral.save(validate: false)
+            write_audit_log!(referral, true)
+          end
+        rescue => e
+          App.logger.error("[Referral] create failed for lead ##{saved_lead.id}: #{e.message}")
+          App.logger.error(e.backtrace)
         end
       end
 
@@ -86,7 +97,7 @@ class App::Services::ClientSiteVisits < App::Services::Base
       )
 
       save(visit) do
-        Notification.create(
+        notify_safely!(
           audience: "admin",
           type: "visit",
           icon: "CalendarCheck",
@@ -96,7 +107,7 @@ class App::Services::ClientSiteVisits < App::Services::Base
 
         agent = property&.agent_slug.present? ? Agent.first(slug: property.agent_slug) : nil
         if agent
-          Notification.create(
+          notify_safely!(
             audience: "agent",
             recipient_id: agent.id,
             type: "visit",

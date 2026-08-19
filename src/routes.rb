@@ -577,7 +577,11 @@ class App::Routes < Roda
         end
 
         # Public Newsletter subscription — see services/public_newsletter.rb.
+        # 'unsubscribe' registered before the bare POST so that literal path
+        # segment matches first, same convention as notifications'
+        # 'mark-all-read' elsewhere in this file.
         r.on 'newsletter' do
+          r.post('unsubscribe') { PublicNewsletter[r].unsubscribe }
           r.post { PublicNewsletter[r].create }
         end
 

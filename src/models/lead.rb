@@ -56,17 +56,27 @@ class App::Models::Lead < Sequel::Model
     to_pos.merge('status_history' => status_history)
   end
 
-  # Item 16 of the spec: a lead is only ever "active" while it's non-terminal
-  # and within its own 60-day validity window (same window
-  # sweep_expired_leads! auto-archives past) — an expired or Closed/Lost
-  # lead for the same phone number doesn't block a fresh enquiry. Used by
-  # services/leads.rb#create and services/ram_portal.rb#create_my_lead, the
-  # two real lead-creation entry points.
-  def self.duplicate_active?(phone)
-    return false if phone.blank?
+  # A lead is only ever "active" while it's non-terminal and within its own
+  # 60-day validity window (same window sweep_expired_leads! auto-archives
+  # past) — an expired or Closed/Lost lead for the same phone number is not
+  # "active". Returns the actual record (not just a boolean) so a caller can
+  # reuse it — see services/public_site_visits.rb#create, which attaches a
+  # repeat guest's new visit request to this same Lead instead of either
+  # blocking it outright or spawning a duplicate.
+  def self.active_for_phone(phone)
+    return nil if phone.blank?
 
     cutoff = Time.now - (VALIDITY_DAYS * 24 * 60 * 60)
-    where(client_phone: phone, archived: false).exclude(status: TERMINAL_STATUSES).where { created_at > cutoff }.first ? true : false
+    where(client_phone: phone, archived: false).exclude(status: TERMINAL_STATUSES).where { created_at > cutoff }.first
+  end
+
+  # Item 16 of the spec. Used by services/leads.rb#create and
+  # services/ram_portal.rb#create_my_lead, the two real lead-creation entry
+  # points that should hard-reject a duplicate rather than silently reuse
+  # one — an admin/RAM logging a brand-new enquiry is a distinct action from
+  # a guest re-requesting a site visit (see #active_for_phone above).
+  def self.duplicate_active?(phone)
+    active_for_phone(phone) ? true : false
   end
 
   # Called after every save from services/leads.rb — #create calls this
@@ -113,6 +123,20 @@ class App::Models::Lead < Sequel::Model
     validates_presence [:client_name, :client_phone]
     validates_format(EMAIL_REGEXP, :client_email, message: 'is not a valid email address') if client_email.present?
     errors.add(:client_phone, 'must be a 10-digit phone number') if client_phone.present? && client_phone.gsub(/\D/, '').length != 10
+
+    # Closed/Lost are terminal — once a lead lands there it's done, not just
+    # "far along the funnel" (that's what the SiteVisit-completed guard below
+    # already protects). Without this, the admin Enquiries table's own
+    # quick-status dropdown (which offers every status regardless of the
+    # row's current one) could silently reopen an already-decided lead back
+    # to e.g. Negotiation. Scoped to an actual status change on an existing
+    # record, same convention as the guard below.
+    if !new? && column_changed?(:status)
+      old_status, = column_change(:status)
+      if TERMINAL_STATUSES.include?(old_status)
+        errors.add(:status, "can't be changed — this lead is already #{old_status} and can't be reopened")
+      end
+    end
 
     # A completed SiteVisit is a real, already-happened milestone — nothing
     # stopped the lead's own status from being dragged back to Enquiry/

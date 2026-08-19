@@ -64,18 +64,38 @@ class App::Services::Base
   # changed column. See `write_audit_log!` for the actual write; it has its
   # own internal rescue so a broken audit insert can never fail this method
   # or the caller's real create/update.
+  # The rescue below is scoped *only* to `obj.save` itself — deliberately not
+  # wrapping the success block too. Several callers nest a second `save(...)`
+  # (or a raw Notification.create/etc.) inside the block passed here (e.g.
+  # services/public_site_visits.rb, services/client_site_visits.rb saving a
+  # Lead, then a SiteVisit, then firing notifications, all inside one
+  # another's blocks). If that rescue covered the block and something in it
+  # raised, the object this call was actually responsible for had *already
+  # been saved and committed* — but the caller would still get back a 400
+  # "save failed" response, which is a lie: the row is really in the
+  # database, the client is just wrongly told otherwise. Scoping the rescue
+  # to the save call alone means a downstream failure in the continuation
+  # can never misreport an already-successful save as a failure; it's the
+  # caller's own job to make any further side effect in its block as safe as
+  # write_audit_log!/record_price_history! already are (self-contained,
+  # logged, never re-raised) if it shouldn't be able to fail the request at
+  # all.
   def save(obj, &block)
     was_new = obj.new?
-    if obj.save
+    begin
+      saved = obj.save
+    rescue => e
+      App.logger.error(e.message)
+      App.logger.error(e.backtrace)
+      return_errors!(e.message, 400)
+    end
+
+    if saved
       write_audit_log!(obj, was_new)
       block_given? ? yield(obj) : return_success(obj.to_pos)
     else
       return_errors!(obj.errors, 400)
     end
-  rescue => e
-    App.logger.error(e.message)
-    App.logger.error(e.backtrace)
-    return_errors!(e.message, 400)
   end
 
   def check_presence!(*flds)
@@ -448,6 +468,24 @@ class App::Services::Base
     write_audit_row!(obj, old_value: summary, new_value: nil)
   rescue => e
     App.logger.error("[AuditLog] delete-write failed for #{obj.class.name} ##{obj.pk}: #{e.message}")
+    App.logger.error(e.backtrace)
+  end
+
+  # Same "must never fail the real operation that already succeeded"
+  # contract as write_audit_log!/write_delete_audit_log! above — rescued and
+  # logged rather than re-raised. Use for any Notification.create fired as a
+  # side effect *after* the primary save an action is actually responsible
+  # for has already committed. Extracted from the incident in
+  # services/public_site_visits.rb / services/client_site_visits.rb: an
+  # unrescued Notification.create failure was getting caught by save()'s own
+  # rescue (before that rescue was narrowed to cover only the object's own
+  # save — see Base#save's comment) and reported back to the client as "the
+  # site visit failed to save," even though the Lead/SiteVisit had already
+  # been committed.
+  def notify_safely!(**attrs)
+    Notification.create(**attrs)
+  rescue => e
+    App.logger.error("[Notification] create failed for audience=#{attrs[:audience]}: #{e.message}")
     App.logger.error(e.backtrace)
   end
 
