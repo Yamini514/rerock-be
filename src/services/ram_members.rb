@@ -113,23 +113,30 @@ class App::Services::RamMembers < App::Services::Base
     }
   end
 
-  # RAM Details page's top 3 stat tiles — three cheap aggregate queries
-  # scoped to this RAM's real referrals/commissions (both keyed by
-  # RamMember#slug, the established deferred-FK convention — see
-  # migrations/0059/0060's own comments), never the jsonb `revenue_managed`/
-  # `referral_generated` columns above (those are legacy free-entry KPI
-  # fields off the old ramTeam mock, not real referral-derived numbers).
-  # `referralsByStatus` backs the Overview tab's summary card.
+  # RAM Details page's stat tiles — cheap aggregate queries scoped to this
+  # RAM's real referrals/commissions/leads (all keyed by RamMember#slug, the
+  # established deferred-FK convention — see migrations/0059/0060's own
+  # comments), never the jsonb `revenue_managed`/`referral_generated`
+  # columns above (those are legacy free-entry KPI fields off the old
+  # ramTeam mock, not real referral-derived numbers). `referralsByStatus`
+  # backs the Overview tab's summary card; `activeLeads`/`clients`/
+  # `conversions` mirror services/ram_portal.rb#my_stats' own identical
+  # computation exactly, so the admin sees the same numbers the RAM sees on
+  # their own dashboard.
   def stats
     ram = item
     referral_ds = Referral.where(ram_id: ram.slug)
     commission_ds = Commission.where(ram_id: ram.slug)
+    lead_ds = Lead.where(ram_id: ram.slug)
 
     return_success(
       'referralsCount' => referral_ds.exclude(archived: true).count,
       'revenue' => (commission_ds.sum(:sale_amount) || 0).to_i,
       'commissionEarned' => (commission_ds.where(status: %w[APPROVED PROCESSING PAID]).sum(:commission_amount) || 0).to_i,
-      'referralsByStatus' => referral_ds.exclude(archived: true).group_and_count(:status).to_hash(:status, :count)
+      'referralsByStatus' => referral_ds.exclude(archived: true).group_and_count(:status).to_hash(:status, :count),
+      'activeLeads' => lead_ds.where(archived: false).exclude(status: Lead::TERMINAL_STATUSES).count,
+      'clients' => referral_ds.exclude(client_id: nil).select(:client_id).distinct.count,
+      'conversions' => lead_ds.where(status: 'Closed').count
     )
   end
 

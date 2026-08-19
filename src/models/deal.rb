@@ -52,12 +52,14 @@ class App::Models::Deal < Sequel::Model
     to_pos.merge('status_history' => status_history)
   end
 
-  # Called after every save from both the admin (services/deals.rb#update)
-  # and agent-portal (services/agent_portal.rb#update_my_deal) update paths
-  # — same "call unconditionally after save, guard with an idempotent check"
-  # convention as SiteVisit#ensure_deal_for_completion!. Fires the
-  # "Commission Calculation" step of the RAM referral flow the moment a
-  # deal tied to a real Referral reaches Closed: computed math only (sale
+  # Called after every save from the admin's own create AND update
+  # (services/deals.rb#create/#update) and the agent-portal's update path
+  # (services/agent_portal.rb#update_my_deal) — same "call unconditionally
+  # after save, guard with an idempotent check" convention as
+  # SiteVisit#ensure_deal_for_completion!. Fires the "Commission
+  # Calculation" step of the RAM referral flow the moment a deal tied to a
+  # real Referral reaches Closed (whether it reached Closed via a later
+  # stage move, or was created already Closed): computed math only (sale
   # value × a flat rate), landing as PENDING — every subsequent lifecycle
   # step (eligible/approved/processing/paid/rejected) stays an explicit
   # admin decision via services/commissions.rb, never automatic.
@@ -87,7 +89,7 @@ class App::Models::Deal < Sequel::Model
 
   # Agent Network's per-agent analogue of the RAM commission hook above —
   # same "call unconditionally after save, guard idempotently" convention
-  # (services/deals.rb#update), but stamps the rate/amount directly onto
+  # (services/deals.rb#create/#update), but stamps the rate/amount directly onto
   # this deal (migrations/0075) instead of creating a row in a separate
   # table, since there's no per-agent commission workflow to track, just the
   # one rate/amount used at closure. `agent_commission_amount.present?`
@@ -95,8 +97,8 @@ class App::Models::Deal < Sequel::Model
   # makes a later change to the agent's own `commission_rate` not rewrite
   # this deal's historical commission (see Agent#live_stats, which reads
   # this stamped value instead of recomputing from the agent's current
-  # rate). Deliberately not also wired into Deals#create — same scope as
-  # `ensure_commission_for_closure!` above, which only fires from #update.
+  # rate). Wired into both Deals#create and #update, same as
+  # `ensure_commission_for_closure!` above.
   def ensure_agent_commission_for_closure!
     return unless stage == 'Closed'
     return if agent_slug.blank?
@@ -141,13 +143,15 @@ class App::Models::Deal < Sequel::Model
     end
   end
 
-  # Called after every save from both the admin (services/deals.rb#update)
-  # and agent-portal (services/agent_portal.rb#update_my_deal) update paths
-  # — same "call unconditionally after save, guard with an actual-change
-  # check" convention as SiteVisit#notify_client_of_status!. Fires once, the
-  # moment a deal reaches Closed, telling the client whose purchase it is.
-  # No-op for a deal with no linked client account (e.g. one entered with
-  # just a free-typed client_name, per Deals#create's own comment).
+  # Called after every save from the admin's own create AND update
+  # (services/deals.rb#create/#update) and the agent-portal's update path
+  # (services/agent_portal.rb#update_my_deal) — same "call unconditionally
+  # after save, guard with an actual-change check" convention as
+  # SiteVisit#notify_client_of_status!. Fires once, the moment a deal
+  # reaches Closed (whether via a later stage move or created already
+  # Closed), telling the client whose purchase it is. No-op for a deal with
+  # no linked client account (e.g. one entered with just a free-typed
+  # client_name, per Deals#create's own comment).
   def notify_client_of_closure!
     return unless column_changed?(:stage)
     return unless stage == 'Closed'
@@ -171,7 +175,7 @@ class App::Models::Deal < Sequel::Model
   # one-time seed on create) — closing a deal for an existing client never
   # touched it, so a real, closed sale silently never showed up in that
   # client's own Portfolio. Called unconditionally after every save
-  # (services/deals.rb#update), same "explicit call after save, guard by
+  # (services/deals.rb#create/#update), same "explicit call after save, guard by
   # idempotency" convention as ensure_commission_for_closure! above — guarded
   # here by "does this client already have an entry for this exact
   # property" so re-saving an already-Closed deal (e.g. editing notes) never

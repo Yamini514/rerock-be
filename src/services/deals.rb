@@ -60,6 +60,19 @@ class App::Services::Deals < App::Services::Base
     end
     save(model.new(data)) do |o|
       DealStatusHistory.create(deal_id: o.id, status: o.stage, changed_by: audit_changed_by, notes: params[:status_note].presence)
+      # A Deal created already at stage: 'Closed' (rather than reaching
+      # Closed later via #update's Kanban stage move) must still trigger
+      # every one of #update's own closure side effects — same calls, same
+      # order, same "unconditional call, guarded idempotently inside each
+      # method" convention. Without this, a deal entered as a done-deal from
+      # the start would silently never generate the RAM's/agent's
+      # commission, flip the Property to Sold, notify the client, or land
+      # on the client's portfolio.
+      o.ensure_commission_for_closure!
+      o.ensure_agent_commission_for_closure!
+      o.sync_property_status_for_stage!
+      o.notify_client_of_closure!
+      o.sync_client_investment!
       return_success(o.with_status_history)
     end
   end

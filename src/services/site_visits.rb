@@ -11,6 +11,12 @@ class App::Services::SiteVisits < App::Services::Base
     ds = ds.where(lead_id: qs[:lead_id]) if qs[:lead_id].present?
     ds = ds.where(property_id: qs[:property_id]) if qs[:property_id].present?
     ds = ds.where(community_id: qs[:community_id]) if qs[:community_id].present?
+    # `site_visits` has no `ram_id` column of its own (only `agent_slug`,
+    # migrations/0015) — scoped through the visit's Lead instead, same
+    # subquery services/ram_portal.rb#my_site_visits already uses for a
+    # RAM's own portal view of this same data. Lets the admin RAM detail
+    # page filter to one RAM's visits without duplicating that logic.
+    ds = ds.where(lead_id: Lead.where(ram_id: qs[:ram_id]).select(:id)) if qs[:ram_id].present?
     ds = ds.where { date >= qs[:date_from] } if qs[:date_from].present?
     ds = ds.where { date <= qs[:date_to] } if qs[:date_to].present?
     if qs[:search].present?
