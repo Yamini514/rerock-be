@@ -16,6 +16,16 @@ class App::Services::Communities < App::Services::Base
     if qs[:search].present?
       ds = ds.where(Sequel.like(:name, "%#{qs[:search]}%", case_insensitive: true))
     end
+    # routes.rb mounts this exact same class/method for both the admin
+    # ('communities', admin_required!-gated) and public ('public'/
+    # 'communities', no auth at all) routes — `App.cu.staff?` is the only
+    # signal available to tell which one is calling, and it's reliable here
+    # since the admin mount can't be reached at all without a valid staff
+    # session. An admin always sees every community regardless of live
+    # inventory (so they can find and add properties to a sold-out or
+    # not-yet-listed one); the public route never sees one with nothing a
+    # visitor could actually buy.
+    ds = ds.where(archived: false, id: live_community_ids) unless App.cu.staff?
     ds = apply_sort(ds, SORTABLE_COLUMNS, default: [[:created_at, :desc]])
 
     # Opt-in: same non-breaking contract as Properties#list — no `page`
@@ -26,6 +36,9 @@ class App::Services::Communities < App::Services::Base
   end
 
   def get
+    if !App.cu.staff? && (item.archived || !has_live_properties?(item.id))
+      return_errors!('Community not found.', 404)
+    end
     stats = community_stats(item.id)
     return_success(item.to_pos.merge(stats[item.id] || default_stats))
   end
@@ -145,6 +158,21 @@ class App::Services::Communities < App::Services::Base
         'property_count' => property_counts[id] || 0,
       }
     end
+  end
+
+  # "Has properties" for a public visitor means has something actually
+  # purchasable right now — Published and not Sold, the same definition that
+  # already decides whether a property shows up in its own community's
+  # listing grid (app/(site)/communities/[slug]/page.js's own
+  # availableProperties filter, matching services/public_properties.rb's own
+  # visibility rule). Only ever consulted when App.cu.staff? is false (see
+  # #list/#get above) — an admin's own view is never scoped by this.
+  def has_live_properties?(community_id)
+    Property.where(community_id: community_id, publish_status: 'Published').exclude(status: 'Sold').first.present?
+  end
+
+  def live_community_ids
+    Property.where(publish_status: 'Published').exclude(status: 'Sold').select_map(:community_id).uniq
   end
 
   def record_price_history!(community, change_type:, notes: nil)

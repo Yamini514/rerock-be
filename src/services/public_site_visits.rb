@@ -40,6 +40,17 @@ class App::Services::PublicSiteVisits < App::Services::Base
     end
     return_errors!("Preferred date can't be in the past.", 400) if parsed_date < Date.today
 
+    # models/site_visit.rb's own validate already rejects this too (same
+    # rule, single source of truth) — checked again here, with a real
+    # message, purely because a Hash-shaped model-validation error doesn't
+    # surface readably through publicApiClient.js (it falls back to a bare
+    # "Request failed"), unlike the admin's own apiClient.js which already
+    # flattens those. Same reasoning as the phone-number guard in
+    # client_site_visits.rb#create.
+    if time.present? && has_conflicting_visit?(phone, parsed_date, time)
+      return_errors!("You already have a site visit booked for this exact date and time.", 400)
+    end
+
     property = property_slug.present? ? Property.first(slug: property_slug) : nil
 
     # A guest who already has an open enquiry (from an earlier site-visit
@@ -96,6 +107,15 @@ class App::Services::PublicSiteVisits < App::Services::Base
   end
 
   private
+
+  # Same person (by phone — the only identity a guest has), same exact
+  # date+time, an already-active appointment — see models/site_visit.rb's
+  # own validate for the full reasoning (scoped by client_phone rather than
+  # lead_id since a repeat guest doesn't always reuse the same Lead).
+  def has_conflicting_visit?(phone, date, time)
+    lead_ids = Lead.where(client_phone: phone).select(:id)
+    SiteVisit.where(lead_id: lead_ids, date: date, time: time).exclude(status: 'Cancelled').first.present?
+  end
 
   def finalize_site_visit!(lead, property, name, date, time)
     visit = SiteVisit.new(

@@ -42,6 +42,16 @@ class App::Services::ClientSiteVisits < App::Services::Base
       return_errors!("You already own this property — no need to schedule another visit.", 400)
     end
 
+    # models/site_visit.rb's own validate already rejects this too (same
+    # rule, single source of truth) — checked again here, with a real
+    # message, purely because a Hash-shaped model-validation error doesn't
+    # surface readably through clientApiClient.js (it falls back to a bare
+    # "Request failed"), unlike the admin's own apiClient.js which already
+    # flattens those. Same reasoning as the phone-number guard above.
+    if time.present? && has_conflicting_visit?(client.phone, date, time)
+      return_errors!("You already have a site visit booked for this exact date and time.", 400)
+    end
+
     # A logged-in client can still be the same person who clicked a RAM's
     # shared referral link this session (BookVisitModal.js sends the code
     # regardless of login state) — attribute it the same way
@@ -155,6 +165,15 @@ class App::Services::ClientSiteVisits < App::Services::Base
   end
 
   private
+
+  # Same person (by phone), same exact date+time, an already-active
+  # appointment — see models/site_visit.rb's own validate for the full
+  # reasoning (scoped by client_phone rather than lead_id since this flow
+  # creates a brand-new Lead on every single booking).
+  def has_conflicting_visit?(phone, date, time)
+    lead_ids = Lead.where(client_phone: phone).select(:id)
+    SiteVisit.where(lead_id: lead_ids, date: date, time: time).exclude(status: 'Cancelled').first.present?
+  end
 
   def visit_brief(visit)
     property = visit.property
