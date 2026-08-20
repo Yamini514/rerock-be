@@ -22,7 +22,7 @@ module App
     end
 
     def logger
-      @logger ||= Logger.new(STDOUT)
+       @logger ||= Logger.new(STDOUT).tap { |l| l.level = Logger::INFO }
     end
 
     def env
@@ -67,13 +67,14 @@ module App
     end
 
     def connect_to_database
-      @db = Sequel.connect(db_url, 
-        max_connections: NUMBER_OF_CONNECTIONS, 
-        logger: logger, 
-        after_connect: Proc.new { logger.info("Database connection established") }
-      )
+      @db = Sequel.connect(db_url,
+              max_connections: NUMBER_OF_CONNECTIONS,
+              logger: logger,
+              sql_log_level: :debug,
+                after_connect: Proc.new { logger.info("Database connection established") }
+               )
       @db.extension(:connection_validator)
-      @db.pool.connection_validation_timeout = 3600
+      # @db.pool.connection_validation_timeout = 3600
     end
     
     def setup_aws_config

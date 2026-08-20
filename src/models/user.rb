@@ -1,6 +1,17 @@
 class App::Models::User < Sequel::Model
   include BCrypt
 
+  # UserForm.js's "Designation" field is a fixed 3-option dropdown, not free
+  # text — this is the server-side mirror of that allowlist. Unrelated to
+  # `role_id`/permissions, which is what actually gates access.
+  DESIGNATIONS = %w[Agent RAM Client].freeze
+
+  # Same 10-digit, no-country-code shape Agent/RamMember/Client already
+  # enforce on their own `phone`/`phone_number` columns (models/agent.rb's
+  # PHONE_REGEXP) — kept optional here, unlike those, since an Admin Portal
+  # account isn't required to carry a phone number at all.
+  PHONE_REGEXP = /\A[6-9]\d{9}\z/
+
   many_to_one :role
   # Self-referential FK (migrations/0039) backing the mock's reportingTo — the
   # frontend resolves this to a display name by looking the id up against the
@@ -14,6 +25,8 @@ class App::Models::User < Sequel::Model
     super
     validates_presence [:full_name, :email]
     validates_unique(:email) { |ds| ds.where(active: true) }
+    errors.add(:designation, "must be one of #{DESIGNATIONS.join(', ')}") if designation.present? && !DESIGNATIONS.include?(designation)
+    errors.add(:phone_number, "must be a valid 10-digit phone number") if phone_number.present? && !phone_number.match?(PHONE_REGEXP)
   end
 
   def password
@@ -71,6 +84,37 @@ class App::Models::User < Sequel::Model
         HTML
       end
     end
+
+    mail.deliver!
+  end
+
+  # Admin-created account's first password (services/users.rb#create) — same
+  # `mail` gem/SMTP infra and "email it instead of showing it in the admin
+  # UI" reasoning as Client#send_temporary_password_email/RamMember#send_
+  # temporary_password_email/Agent#send_temporary_password_email. The admin
+  # changes it afterward via the Admin Portal's own existing update_password
+  # action above.
+  def send_temporary_password_email(temp_password)
+    user_email = self.email
+    user_name = self.full_name
+
+    mail = Mail.new do
+      from    'apps@srinishtha.com'
+      to      user_email
+      subject 'Your REROCK Realty admin portal login'
+    end
+
+    App::MailerTemplate.brand!(
+      mail,
+      preheader: "Your REROCK Realty admin portal account is ready.",
+      body_html: <<~HTML,
+        <h2 style="margin:0 0 12px; font-size:20px; color:#1c1b1a;">Welcome to REROCK Realty</h2>
+        <p style="margin:0 0 8px;">Hello #{user_name},</p>
+        <p style="margin:0;">An account has been created for you on the REROCK Realty Admin Portal. Here is your temporary password:</p>
+        #{App::MailerTemplate.code_block(temp_password)}
+        <p style="margin:0; font-size:13px; color:#6b6b6b;">Please log in and change your password from your profile settings as soon as possible.</p>
+      HTML
+    )
 
     mail.deliver!
   end

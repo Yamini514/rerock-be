@@ -27,7 +27,7 @@ class App::Routes < Roda
     'Locations' => 'locations',
     'Areas' => 'areas',
     'Agents' => 'agentNetwork',
-    'LeaveRequests' => 'agentNetwork',
+    # 'LeaveRequests' => 'agentNetwork',
     'MediaItems' => 'mediaLibrary',
     'Notifications' => 'notifications',
     'Users' => 'users',
@@ -391,11 +391,11 @@ class App::Routes < Roda
           # services/agent_portal.rb#my_leave_requests/#create_my_leave_request/
           # #cancel_my_leave_request. The admin review/approve side lives at
           # /leave-requests below (services/leave_requests.rb).
-          r.on 'leave-requests' do
-            r.get { AgentPortal[r].my_leave_requests }
-            r.post { AgentPortal[r].create_my_leave_request }
-            r.put(Integer) { |id| AgentPortal[r, id: id].cancel_my_leave_request }
-          end
+          # r.on 'leave-requests' do
+          #   r.get { AgentPortal[r].my_leave_requests }
+          #   r.post { AgentPortal[r].create_my_leave_request }
+          #   r.put(Integer) { |id| AgentPortal[r, id: id].cancel_my_leave_request }
+          # end
 
           # Admin-broadcast notifications targeted at audience "agent" —
           # see services/agent_notifications.rb. Read state is per-agent
@@ -756,9 +756,9 @@ class App::Routes < Roda
         # Portal side (agent-portal/me/leave-requests); this is Read/List
         # plus the approve/reject #update, with Create/Delete kept too so an
         # admin can log or remove one on an agent's behalf if needed.
-        r.on 'leave-requests' do
-          do_crud(LeaveRequests, r, 'CRUDL')
-        end
+        # r.on 'leave-requests' do
+        #   do_crud(LeaveRequests, r, 'CRUDL')
+        # end
 
         # RAM (REROCK Advisory Members) — table/class are RamMembers/
         # ram_members (avoiding an awkward bare `ram` SQL identifier), but the

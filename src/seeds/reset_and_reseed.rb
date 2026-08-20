@@ -110,17 +110,77 @@ module App
       #    sample_data.rb at all; Rakefile's own db:seed task only creates one
       #    super-admin role + user). Users reference Roles by slug.
       # =======================================================================
+      # The real permission gate (routes.rb#require_permission!, only active
+      # when ENFORCE_PERMISSIONS=true) does a plain array `.include?("module.
+      # action")` check — no wildcard expansion. The flag strings below used
+      # to be placeholders ("properties.*", "crm.leads", "finance.*", "cms.*")
+      # that don't match that format at all (and "finance"/"cms" aren't even
+      # real module keys — see routes.rb's RESOURCE_PERMISSION_MODULES).
+      # Flipping ENFORCE_PERMISSIONS=true against the old data would have
+      # locked every seeded non-super-admin account out of everything. Fixed
+      # here by expanding real flags off the same module->actions taxonomy as
+      # the frontend's lib/data/staff.js#permissionModules (kept in sync by
+      # hand — this seed file has no access to frontend JS).
+      PERMISSION_TAXONOMY = {
+        "dashboard" => %w[view],
+        "crm" => %w[view create edit delete export import],
+        "communities" => %w[view create edit delete publish archive export import],
+        "properties" => %w[view create edit delete publish archive export import duplicate],
+        "propertyTypes" => %w[view create edit delete],
+        "builders" => %w[view create edit delete archive],
+        "locations" => %w[view create edit delete],
+        "areas" => %w[view create edit delete],
+        "pricing" => %w[view edit export import],
+        "agentNetwork" => %w[view create edit delete],
+        "marketing" => %w[view create edit delete publish approve reject],
+        "mediaLibrary" => %w[view upload download delete],
+        "reports" => %w[view export],
+        "notifications" => %w[view create manage],
+        "users" => %w[view create edit delete manage],
+        "roles" => %w[view create edit delete manage],
+        "permissions" => %w[view manage],
+        "auditLogs" => %w[view export restore],
+        "settings" => %w[view manage],
+      }.freeze
+
+      # `only:` narrows a module to a subset of its own actions (e.g. a
+      # view-only grant); omitted, every action the taxonomy lists for that
+      # module is included.
+      def self.module_flags(*modules, only: nil)
+        modules.flat_map { |m| (only || PERMISSION_TAXONOMY.fetch(m)).map { |a| "#{m}.#{a}" } }
+      end
+
       ROLES = [
         { slug: "role-super-admin", name: "Super Admin", level: 0, is_super_admin: true, status: "Active",
           description: "Full, unrestricted access to every module.", permissions: ["*"] },
+        # "Every module except Roles and Permissions administration" — same
+        # scope as the frontend mock's own Admin role (lib/data/staff.js's
+        # `nonAdminFlags`: every real flag except roles.* and
+        # permissions.manage). Roles/Permissions administration stays
+        # Super-Admin-only; everything else, including full Users/Audit Logs
+        # management, is granted.
         { slug: "role-admin", name: "Admin", level: 1, is_super_admin: false, status: "Active",
-          description: "Broad operational access across CRM, listings, and finance.", permissions: ["properties.*", "crm.*", "finance.*"] },
+          description: "Broad operational access across CRM, listings, and finance.",
+          permissions: module_flags(*(PERMISSION_TAXONOMY.keys - %w[roles permissions])) },
         { slug: "role-sales-manager", name: "Sales Manager", level: 5, is_super_admin: false, status: "Active",
-          description: "Manages agents, leads, deals, and site visits.", permissions: ["crm.leads", "crm.deals", "crm.site_visits"] },
+          description: "Manages agents, leads, deals, and site visits.",
+          permissions: module_flags("dashboard") +
+            module_flags("crm", only: %w[view create edit export]) +
+            module_flags("agentNetwork", only: %w[view create edit]) +
+            module_flags("reports", only: %w[view]) },
+        # Invoices/Payments/Refunds/Taxes have no permission module of their
+        # own yet (routes.rb deliberately leaves them unenforced — see its
+        # RESOURCE_PERMISSION_MODULES comment), so this role's real enforced
+        # surface is narrower than its description implies until that gap is
+        # closed. Flagged here rather than silently worked around.
         { slug: "role-finance-manager", name: "Finance Manager", level: 5, is_super_admin: false, status: "Active",
-          description: "Manages invoices, payments, refunds, and taxes.", permissions: ["finance.*"] },
+          description: "Manages invoices, payments, refunds, and taxes.",
+          permissions: module_flags("dashboard") + module_flags("pricing") + module_flags("reports") +
+            module_flags("crm", only: %w[view export]) },
         { slug: "role-content-editor", name: "Content Editor", level: 8, is_super_admin: false, status: "Active",
-          description: "Manages blogs, testimonials, FAQs, and SEO pages.", permissions: ["cms.*"] },
+          description: "Manages blogs, testimonials, FAQs, and SEO pages.",
+          permissions: module_flags("dashboard") + module_flags("marketing") +
+            module_flags("mediaLibrary", only: %w[view upload download]) },
       ].freeze
 
       def seed_roles!
@@ -137,12 +197,18 @@ module App
         puts "Seeded roles: #{App::Models::Role.count}"
       end
 
+      # `designation` dropped from every row below: models/user.rb now
+      # restricts it to User::DESIGNATIONS (Agent/RAM/Client) and none of
+      # these five admin-staff seed accounts are actually any of those —
+      # forcing one on to satisfy the new constraint would just be wrong
+      # data. `department` (a separate, still-free-text column) already
+      # carries the meaningful "what team are they on" info for these rows.
       USERS = [
-        { full_name: "Admin User", email: "admin.user@rerockrealty.com", role_slug: "role-super-admin", designation: "Administrator", department: "Management" },
-        { full_name: "Ops Admin", email: "ops.admin@rerockrealty.com", role_slug: "role-admin", designation: "Operations Admin", department: "Operations" },
-        { full_name: "Sales Manager", email: "sales.manager@rerockrealty.com", role_slug: "role-sales-manager", designation: "Sales Manager", department: "Sales" },
-        { full_name: "Finance Manager", email: "finance.manager@rerockrealty.com", role_slug: "role-finance-manager", designation: "Finance Manager", department: "Finance" },
-        { full_name: "Content Editor", email: "content.editor@rerockrealty.com", role_slug: "role-content-editor", designation: "Content Editor", department: "Marketing" },
+        { full_name: "Admin User", email: "admin.user@rerockrealty.com", role_slug: "role-super-admin", department: "Management" },
+        { full_name: "Ops Admin", email: "ops.admin@rerockrealty.com", role_slug: "role-admin", department: "Operations" },
+        { full_name: "Sales Manager", email: "sales.manager@rerockrealty.com", role_slug: "role-sales-manager", department: "Sales" },
+        { full_name: "Finance Manager", email: "finance.manager@rerockrealty.com", role_slug: "role-finance-manager", department: "Finance" },
+        { full_name: "Content Editor", email: "content.editor@rerockrealty.com", role_slug: "role-content-editor", department: "Marketing" },
       ].freeze
 
       def seed_users!

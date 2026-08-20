@@ -17,22 +17,42 @@ class App::Services::Users < App::Services::Base
     return_success(item.as_pos)
   end
 
-  # The Admin Portal's Users page no longer lets an admin pick a role or a
-  # permission tier — every account here is simply "Admin" (RAM and Agent
-  # accounts live in their own separate tables/portals, never in `users`).
-  # So every account created here gets full access (is_super_admin) too:
-  # with the Roles/Permissions matrix UI gone, there's no way left for an
-  # admin to grant a lesser role any real capability, and a new admin with
-  # zero permissions would just be locked out of the portal they were just
-  # added to. `role_id` is still set (to a lazily-created "Admin" row) purely
-  # as a display label distinguishing regular admins from the one seeded
-  # bootstrap "Super Admin" account, not as an access-control mechanism.
+  # The Admin Portal's Users page assigns a real role (see the Roles admin
+  # UI) rather than a blanket is_super_admin grant — RAM and Agent accounts
+  # live in their own separate tables/portals, never in `users`. `role_id`
+  # defaults to a lazily-created "Admin" row only when the caller doesn't
+  # supply one; `is_super_admin` is never forced here, matching the Roles
+  # service's own convention that it's not a form-editable field.
+  #
+  # An admin-created user used to take a raw password straight from the
+  # form — now generates a real temp password immediately and emails it,
+  # same admin-invite pattern as Agents#create/RamMembers#create/
+  # Clients#create (User#send_temporary_password_email). The raw
+  # temp_password is also merged into this one response (never returned by
+  # #get/#list/#update) so the Admin Portal's Add User form can show it once
+  # in a confirmation dialog as a fallback alongside the email, in case SMTP
+  # isn't reachable in this environment or the admin wants to hand it over
+  # directly.
   def create
     data = data_for(:save)
     data[:role_id] ||= default_admin_role.id
-    data[:is_super_admin] = true if data[:is_super_admin].nil?
     obj = model.new(data)
-    save(obj) { |o| return_success(o.as_pos) }
+
+    temp_password = SecureRandom.alphanumeric(10)
+    obj.password = temp_password
+
+    save(obj) do |o|
+      # See Clients#create's identical rescue: the row is already committed
+      # by this point, so a slow/failed SMTP send must never turn into a
+      # false "user creation failed" response.
+      begin
+        o.send_temporary_password_email(temp_password)
+      rescue => e
+        App.logger.error("[Users#create] temp password email failed for user ##{o.id}: #{e.message}")
+        App.logger.error(e.backtrace)
+      end
+      return_success(o.as_pos.merge('temp_password' => temp_password))
+    end
   end
 
   # Overrides Base#update/#delete purely for response shape: Base's versions
@@ -143,7 +163,7 @@ class App::Services::Users < App::Services::Base
   def self.fields
     {
       save: [
-        :full_name, :password, :email, :role_id, :is_super_admin, :active,
+        :full_name, :email, :role_id, :is_super_admin, :active,
         :phone_number, :designation, :department, :reporting_to_id, :permission_overrides
       ]
     }
