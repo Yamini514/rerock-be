@@ -34,7 +34,19 @@ class App::Models::Property < Sequel::Model
     # "" from the unselected placeholder option), which would otherwise
     # overwrite that column default with a blank string instead of a real
     # lifecycle value.
-    self.publish_status = 'Draft' if new? && publish_status.blank?
+    #
+    # Deliberately NOT scoped to `new?` (was originally, which was the bug):
+    # an admin editing an EXISTING property who opens the Publish tab and
+    # explicitly re-selects the blank "Select Publish Status" placeholder
+    # hits this exact same blank-string case, just on an update instead of a
+    # create — and `publish_status` isn't in the required-fields list, so
+    # nothing else caught it. Properties#list's own Active
+    # ("Draft,Scheduled,Published") and Archived ("Archived") filters both
+    # exclude an empty string, so that property vanished from *both* tabs
+    # with no toggle left that could ever show it again — indistinguishable
+    # from being deleted, even though the row was still sitting in the
+    # database untouched.
+    self.publish_status = 'Draft' if publish_status.blank?
 
     # `publish_at` only ever means something for Scheduled, so this
     # normalizes it to nil the instant any other status is chosen, the same
@@ -89,7 +101,15 @@ class App::Models::Property < Sequel::Model
   # without them, regardless of caller.
   def validate
     super
-    validates_presence [:title, :slug, :community_id, :builder_id, :area_id, :property_type_id, :price, :built_up_area, :status],
+    # `agent_id` added so a property can never go live with no advisor
+    # attached — public_agents.rb's directory only ever returns Active
+    # agents, and the public property page's own "Your Advisor" card
+    # silently disappears with no error when the lookup comes up empty
+    # (an unassigned property, or one assigned to a non-Active agent, look
+    # identical to a visitor). Requiring assignment here at least guarantees
+    # the first case can't happen; the agent's own status is a separate
+    # concern (Agents#update, not this model).
+    validates_presence [:title, :slug, :community_id, :builder_id, :area_id, :property_type_id, :price, :built_up_area, :status, :agent_id],
                         message: 'is required'
     validates_unique :slug
 
@@ -107,6 +127,18 @@ class App::Models::Property < Sequel::Model
     validates_operator(:>=, 0, :price) if price
     validates_operator(:>=, 0, :built_up_area) if built_up_area
     validates_operator(:>=, 0, :land_area) if land_area
+    validates_operator(:>=, 0, :offer_price) if offer_price
+
+    # Had no relationship check to `price` at all before — an offer/discount
+    # price that isn't actually lower than the base price isn't a real offer,
+    # and the admin Property Detail page shows both side by side (Base
+    # Price / Offer Price stats) where a higher "offer" would visibly make
+    # no sense. Scoped to an actual change on either field so an existing
+    # legacy row with an already-inconsistent pair doesn't suddenly start
+    # failing on an unrelated edit.
+    if offer_price.present? && price.present? && offer_price >= price && (new? || column_changed?(:price) || column_changed?(:offer_price))
+      errors.add(:offer_price, 'must be less than the base Price')
+    end
 
     [:bedrooms, :bathrooms, :balconies].each do |field|
       value = send(field)

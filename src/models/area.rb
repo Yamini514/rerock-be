@@ -8,7 +8,11 @@ class App::Models::Area < Sequel::Model
   # frontend-only requiredness checks.
   def validate
     super
-    validates_presence [:name, :city, :state, :slug], message: 'is required'
+    # `image` added to the required list so every public Area page always has
+    # one to render — lib/seo.js's absoluteUrl() (rerock-frontend) crashes if
+    # ever called with a null path, and the Area detail page's own JSON-LD
+    # passes `area.image` straight into it with no guard of its own.
+    validates_presence [:name, :city, :state, :slug, :image], message: 'is required'
     validates_unique :slug
     if name && (new? || column_changed?(:name))
       dup = self.class.where(Sequel.function(:lower, :name) => name.strip.downcase)

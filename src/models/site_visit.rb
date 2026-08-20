@@ -82,6 +82,31 @@ class App::Models::SiteVisit < Sequel::Model
     if status == 'Completed' && date.present? && date > Date.today && (new? || column_changed?(:status))
       errors.add(:status, "can't be Completed for a site visit scheduled in the future")
     end
+
+    # Same person, same exact moment, two different appointments — nothing
+    # stopped that across any of the four booking surfaces (public site,
+    # Client Portal, Agent Portal, admin), since each one only ever
+    # validated its own record in isolation. Scoped by the underlying
+    # Lead's client_phone (always present — Lead#validate requires it)
+    # rather than lead_id: a fresh Lead is created on nearly every new
+    # booking (client_site_visits.rb always makes a new one; the guest flow
+    # in public_site_visits.rb only reuses an existing one if it's still
+    # active), so two visits for the very same person routinely end up on
+    # two different Lead rows — lead_id alone would miss most real
+    # conflicts. Deliberately date+time together, not date alone: the same
+    # person can easily have two visits on the same day at different
+    # times, and that's not a conflict — only an identical time on an
+    # identical date is something nobody can actually attend twice.
+    # Cancelled visits don't count; they're not really "booked" anymore.
+    if date.present? && time.present? && status != 'Cancelled' && (new? || column_changed?(:date) || column_changed?(:time) || column_changed?(:lead_id) || column_changed?(:status))
+      phone = lead&.client_phone
+      if phone.present?
+        conflicting_lead_ids = App::Models::Lead.where(client_phone: phone).select(:id)
+        conflict = self.class.where(lead_id: conflicting_lead_ids, date: date, time: time).exclude(status: 'Cancelled')
+        conflict = conflict.exclude(id: id) unless new?
+        errors.add(:date, 'already has another site visit booked at this exact date and time') if conflict.first
+      end
+    end
   end
 
   # Called after every save from both the admin (services/site_visits.rb)

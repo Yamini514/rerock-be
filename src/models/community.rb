@@ -23,10 +23,14 @@ class App::Models::Community < Sequel::Model
   # relays whatever comes back from here onto the matching field.
   # `location_id` is deliberately excluded from presence (migrations/0053
   # made it nullable on purpose); `slug` uniqueness mirrors the
-  # already-existing DB unique index (migrations/0011).
+  # already-existing DB unique index (migrations/0011). `hero_image` is
+  # required so every public community page always has one to render —
+  # lib/seo.js's absoluteUrl() (rerock-frontend) crashes if it's ever called
+  # with a null path, and the community detail page's own JSON-LD passes
+  # `community.hero_image` straight into it with no guard of its own.
   def validate
     super
-    validates_presence [:name, :slug, :builder_id, :area_id, :status, :rera_status, :total_units, :price_min],
+    validates_presence [:name, :slug, :builder_id, :area_id, :status, :rera_status, :total_units, :price_min, :hero_image],
                         message: 'is required'
     validates_unique :slug
 
