@@ -85,6 +85,7 @@ class App::Services::Deals < App::Services::Base
       o.sync_property_status_for_stage!
       o.notify_client_of_closure!
       o.sync_client_investment!
+      o.sync_lead_status_for_closure!
       return_success(o.with_status_history)
     end
   end
@@ -93,10 +94,10 @@ class App::Services::Deals < App::Services::Base
   # value/closing-date edits all ride the standard PUT/update below —
   # overridden only to run Deal#ensure_commission_for_closure!,
   # #ensure_agent_commission_for_closure!, #sync_property_status_for_stage!,
-  # #notify_client_of_closure!, and #sync_client_investment! after a
-  # successful save, same "call unconditionally, guard idempotently/by-
-  # actual-change" convention as SiteVisits#update's own
-  # ensure_deal_for_completion! call.
+  # #notify_client_of_closure!, #sync_client_investment!, and
+  # #sync_lead_status_for_closure! after a successful save, same "call
+  # unconditionally, guard idempotently/by-actual-change" convention as
+  # SiteVisits#update's own ensure_deal_for_completion! call.
   def update(data = nil)
     data ||= data_for(:save)
     stage_changing = data.key?(:stage) && data[:stage] != item.stage
@@ -107,6 +108,7 @@ class App::Services::Deals < App::Services::Base
       o.sync_property_status_for_stage!
       o.notify_client_of_closure!
       o.sync_client_investment!
+      o.sync_lead_status_for_closure!
       DealStatusHistory.create(deal_id: o.id, status: o.stage, changed_by: audit_changed_by, notes: params[:status_note].presence) if stage_changing
       return_success(o.with_status_history)
     end

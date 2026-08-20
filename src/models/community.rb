@@ -65,6 +65,15 @@ class App::Models::Community < Sequel::Model
     errors.add(:status, "must be one of #{CONSTRUCTION_STATUSES.join(', ')}") if status.present? && !CONSTRUCTION_STATUSES.include?(status)
     errors.add(:rera_status, "must be one of #{RERA_STATUSES.join(', ')}") if rera_status.present? && !RERA_STATUSES.include?(rera_status)
     errors.add(:rera, 'is required when RERA Status is Approved') if rera_status == 'Approved' && rera.blank?
+    # A registration number only means something once RERA has actually
+    # approved it — nothing stopped one from being typed in while status sat
+    # at Pending/Not Registered. Scoped to an actual change on either field
+    # (same convention as the length/cross-field checks throughout this
+    # method) so a legacy row saved before this existed doesn't suddenly fail
+    # on an unrelated edit (e.g. Communities#bulk_price_update).
+    if rera_status != 'Approved' && rera.present? && (new? || column_changed?(:rera) || column_changed?(:rera_status))
+      errors.add(:rera, 'can only be set once RERA Status is Approved')
+    end
     if rera.present? && (new? || column_changed?(:rera))
       errors.add(:rera, "must be #{RERA_MAX_LENGTH} characters or less") if rera.length > RERA_MAX_LENGTH
     end

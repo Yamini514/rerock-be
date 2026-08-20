@@ -9,6 +9,9 @@ class App::Services::ClientBrochureRequests < App::Services::Base
   def create
     client = CurrentClient.client_obj
     return_errors!("Not signed in.", 401) if client.nil?
+    # Same gap/guard as services/client_site_visits.rb#create — this Lead
+    # also hard-requires client_phone (models/lead.rb).
+    return_errors!("Add a phone number to your profile before requesting a brochure.", 400) if client.phone.blank?
 
     community_id = params[:community_id]
     document_name = params[:document_name]&.strip
