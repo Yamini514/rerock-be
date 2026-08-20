@@ -10,6 +10,13 @@ class App::Services::ClientSiteVisits < App::Services::Base
   def create
     client = CurrentClient.client_obj
     return_errors!("Not signed in.", 401) if client.nil?
+    # A site visit's Lead hard-requires client_phone (models/lead.rb's
+    # validates_presence) — client.phone can be blank if the client cleared
+    # it via their own profile (client_auth.rb#update_profile has no
+    # presence guard on phone the way name/email do). Catching it here with
+    # an actionable message instead of letting the Lead#validate failure
+    # below surface as a generic "couldn't schedule visit" error.
+    return_errors!("Add a phone number to your profile before booking a site visit.", 400) if client.phone.blank?
 
     date = params[:date]&.strip
     time = params[:time]&.strip

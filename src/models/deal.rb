@@ -241,4 +241,40 @@ class App::Models::Deal < Sequel::Model
     App.logger.error("[Deal] sync_client_investment! failed for Deal ##{id}: #{e.message}")
     App.logger.error(e.backtrace)
   end
+
+  # Closing a Deal is also the moment its originating enquiry is actually
+  # done — nothing wired this up before, so the admin Enquiries table could
+  # show a Lead sitting at "New"/"Qualified Lead"/etc. forever even after the
+  # real Deal born from it had already closed. `lead_id` is a real FK
+  # (migrations/0091, `Deal#lead`), and Lead's own status enum already has a
+  # matching terminal 'Closed' value (models/lead.rb's STAGE_ORDER/
+  # TERMINAL_STATUSES), so this just carries the same status string across
+  # rather than inventing a new one. Idempotent via "already Closed" rather
+  # than a `column_changed?(:stage)` gate — deliberately, since that check is
+  # unreliable for a deal *created* already at stage: 'Closed' (see this
+  # model's own before_validation comment on column_changed? and `.new`), and
+  # this needs to fire for that case too, same reasoning as
+  # ensure_commission_for_closure!/sync_client_investment! above using their
+  # own idempotency check instead of column_changed?.
+  #
+  # One-way on purpose: if the Deal is later reopened (moved off Closed),
+  # this never reverts the Lead back — Lead#validate's own terminal-status
+  # guard already hard-blocks un-closing a Lead by design (same one-way
+  # reasoning as a completed SiteVisit's own guard), so a revert attempt here
+  # would just fail validation silently. Reopening a deal for correction
+  # doesn't mean the enquiry that produced it stopped being a real, closed
+  # enquiry.
+  def sync_lead_status_for_closure!
+    return unless stage == 'Closed'
+    return if lead_id.nil?
+
+    l = lead
+    return if l.nil? || l.status == 'Closed'
+
+    l.status = 'Closed'
+    l.save
+  rescue => e
+    App.logger.error("[Deal] sync_lead_status_for_closure! failed for Deal ##{id}: #{e.message}")
+    App.logger.error(e.backtrace)
+  end
 end

@@ -52,15 +52,20 @@ class App::Services::Builders < App::Services::Base
   end
 
   # One grouped pass computing everything BuilderForm.js / the admin list
-  # need per builder: `rating`/`review_count` (derived, not stored — real
-  # buyers review the specific Community/project they bought into, see
-  # services/client_reviews.rb's `owns?`, so a builder's rating is the
-  # average `stars` of every Approved review across all of its communities)
-  # plus `community_count`/`property_count`, which the frontend uses to block
-  # deleting a builder that's still referenced elsewhere (same
-  # "reassign first" UX as Areas#stats_by_area / PropertyTypes's own guard).
-  # Pass `builder_id` to scope to a single builder (`get`); omit it to
-  # compute every builder at once (`list`).
+  # need per builder: `rating`/`review_count` (derived, not stored — a
+  # builder can be rated two ways: directly, via services/client_reviews.rb's
+  # `reviewable_type: 'Builder'` path (the Portfolio page's own "Rate the
+  # builder" option), or indirectly through a review of one of its
+  # Communities — so this counts BOTH, not just the latter. A prior version
+  # of this method only ever looked at Community-type reviews, which meant a
+  # direct Builder review saved and displayed fine in the review list
+  # (services/public_reviews.rb queries by type+id directly, unaffected) but
+  # never moved this rating number at all) plus `community_count`/
+  # `property_count`, which the frontend uses to block deleting a builder
+  # that's still referenced elsewhere (same "reassign first" UX as
+  # Areas#stats_by_area / PropertyTypes's own guard). Pass `builder_id` to
+  # scope to a single builder (`get`); omit it to compute every builder at
+  # once (`list`).
   def builder_stats(builder_id = nil)
     communities = Community.select(:id, :builder_id)
     communities = communities.where(builder_id: builder_id) if builder_id
@@ -78,6 +83,12 @@ class App::Services::Builders < App::Services::Base
         end
     end
 
+    direct_builder_reviews = Review.where(reviewable_type: 'Builder', status: 'Approved')
+    direct_builder_reviews = direct_builder_reviews.where(reviewable_id: builder_id) if builder_id
+    direct_builder_reviews.select(:reviewable_id, :stars).each do |r|
+      stars_by_builder[r.reviewable_id] << r.stars
+    end
+
     # `property_count` excludes Archived listings from the catalog count the
     # same way it always did — `publish_status` is the single source of
     # truth now (see models/property.rb), so this reads that instead of the
@@ -86,7 +97,7 @@ class App::Services::Builders < App::Services::Base
     property_scope = property_scope.where(builder_id: builder_id) if builder_id
     property_counts = property_scope.group_and_count(:builder_id).as_hash(:builder_id, :count)
 
-    builder_ids = (community_counts.keys + property_counts.keys).uniq
+    builder_ids = (community_counts.keys + property_counts.keys + stars_by_builder.keys).uniq
     builder_ids.each_with_object({}) do |b_id, out|
       stars = stars_by_builder[b_id] || []
       out[b_id] = {
