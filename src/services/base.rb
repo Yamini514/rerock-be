@@ -332,7 +332,7 @@ class App::Services::Base
         source: source,
         ram_id: ram_id,
         agent_slug: agent_slug,
-        status: "New",
+        status: "Enquiry",
         budget: budget,
         timeline: note.present? ? [{ date: Date.today.to_s, event: "Lead created", note: note }] : []
       )

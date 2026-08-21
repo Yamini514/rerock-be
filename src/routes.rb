@@ -300,11 +300,12 @@ class App::Routes < Roda
           end
 
           # Real S3 upload for the Client Portal's own document upload
-          # (components/portal/UploadDocumentModal.js) — see
-          # services/uploads.rb. Scoped to 'client-documents' only; a client
+          # (components/portal/UploadDocumentModal.js) and profile photo
+          # (components/portal/profile/PersonalInformationCard.js) — see
+          # services/uploads.rb. Scoped to these two purposes only; a client
           # token can never presign any other purpose.
           r.on 'uploads' do
-            r.post('presign') { Uploads[r].presign(allowed_purposes: %w[client-documents]) }
+            r.post('presign') { Uploads[r].presign(allowed_purposes: %w[client-documents client-avatar]) }
           end
 
           # Client's "Saved" (uncapped) and "Shortlist" (capped at 2,

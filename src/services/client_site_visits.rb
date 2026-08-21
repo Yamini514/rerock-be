@@ -75,7 +75,7 @@ class App::Services::ClientSiteVisits < App::Services::Base
       ram_id: link&.ram_id,
       source: link ? "Referral Link" : "Client Portal",
       priority: "Medium",
-      status: "New",
+      status: "Enquiry",
       budget: budget,
       timeline: [{ type: "Note", note: "Requested a site visit#{property_title.present? ? " for #{property_title}" : ""}.", date: Time.now.strftime("%Y-%m-%d") }]
     )

@@ -98,7 +98,7 @@ class App::Services::PublicSiteVisits < App::Services::Base
         agent_slug: property&.agent_slug,
         source: "Website",
         priority: "Medium",
-        status: "New",
+        status: "Enquiry",
         budget: budget,
         timeline: [{ type: "Note", note: "Requested a site visit#{property_title.present? ? " for #{property_title}" : ""}.", date: Time.now.strftime("%Y-%m-%d") }]
       )

@@ -119,6 +119,33 @@ class App::Services::Communities < App::Services::Base
     return_success(updated.map(&:to_pos))
   end
 
+  # Overrides Base#delete purely to name exactly which related records are
+  # still attached before ever reaching the DB's own generic
+  # Sequel::ForeignKeyConstraintViolation rescue (see Base#delete) — that
+  # rescue fires for ANY table still referencing this community, but
+  # CommunityForm.js's own pre-delete check only ever looked at
+  # `property_count` (the one FK an admin can actually clear by
+  # reassigning/deleting Properties one at a time). Leads/SiteVisits/
+  # PriceHistories/Referrals all have their own `community_id` FK
+  # (migrations 0014/0015/0056/0083) with no per-record "remove from this
+  # community" UI, so a bare "related records" message leaves the admin
+  # with no idea what to actually go clean up. Deleting every Property
+  # under a community does NOT touch any of these — they're independent
+  # rows that outlive the Property they were originally logged against.
+  def delete
+    blockers = {
+      'Enquiries' => App::Models::Lead.where(community_id: item.id).count,
+      'Site Visits' => App::Models::SiteVisit.where(community_id: item.id).count,
+      'Price History entries' => App::Models::PriceHistory.where(community_id: item.id).count,
+      'Referrals' => App::Models::Referral.where(community_id: item.id).count,
+    }.select { |_, count| count > 0 }
+    if blockers.any?
+      parts = blockers.map { |label, count| "#{count} #{label}" }.join(', ')
+      return_errors!("This Community can't be deleted — it still has #{parts} referencing it.", 409)
+    end
+    super
+  end
+
   private
 
   def default_stats
