@@ -68,22 +68,19 @@ class App::Models::User < Sequel::Model
       from    'apps@srinishtha.com'
       to      user_email
       subject 'Reset your password'
-      html_part do
-        content_type 'text/html; charset=UTF-8'
-        body <<-HTML
-          <html>
-          <body>
-            <h1>Reset your password</h1>
-            <p>Hello #{user_name},</p>
-            <p>We received a request to reset your password. Click the link below to reset it:</p>
-            <p><a href="#{reset_url}">Reset your password</a></p>
-            <p>If you did not request a password reset, please ignore this email.</p>
-            <p>Thank you,<br/>REROCK Realty</p>
-          </body>
-          </html>
-        HTML
-      end
     end
+
+    App::MailerTemplate.brand!(
+      mail,
+      preheader: "We received a request to reset your REROCK Realty admin portal password.",
+      body_html: <<~HTML,
+        <h2 style="margin:0 0 12px; font-size:20px; color:#1c1b1a;">Reset your password</h2>
+        <p style="margin:0 0 8px;">Hello #{user_name},</p>
+        <p style="margin:0;">We received a request to reset your REROCK Realty admin portal password. Use the button below to choose a new one.</p>
+      HTML
+      cta: { label: 'Reset your password', url: reset_url },
+      footnote: 'If you did not request a password reset, you can safely ignore this email — your password will not be changed.'
+    )
 
     mail.deliver!
   end

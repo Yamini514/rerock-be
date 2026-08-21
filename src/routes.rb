@@ -24,7 +24,6 @@ class App::Routes < Roda
     'Properties' => 'properties',
     'PropertyTypes' => 'propertyTypes',
     'Builders' => 'builders',
-    'Locations' => 'locations',
     'Areas' => 'areas',
     'Agents' => 'agentNetwork',
     # 'LeaveRequests' => 'agentNetwork',
@@ -465,7 +464,7 @@ class App::Routes < Roda
         end
 
         # Lookup tables needed to render/filter the properties list above
-        # (community/area/location/type names) without an admin session —
+        # (community/area/type names) without an admin session —
         # same reuse-the-existing-service, Read+List-only pattern.
         r.on 'communities' do
           do_crud(Communities, r, 'RL')
@@ -480,11 +479,7 @@ class App::Routes < Roda
         end
 
         r.on 'areas' do
-          do_crud(Areas, r, 'RL')
-        end
-
-        r.on 'locations' do
-          do_crud(Locations, r, 'RL')
+          do_crud(PublicAreas, r, 'RL')
         end
 
         r.on 'property-types' do
@@ -645,10 +640,6 @@ class App::Routes < Roda
 
         r.on 'areas' do
           do_crud(Areas, r, 'CRUDL')
-        end
-
-        r.on 'locations' do
-          do_crud(Locations, r, 'CRUDL')
         end
 
         r.on 'amenities' do

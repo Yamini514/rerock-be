@@ -365,105 +365,6 @@ module App
       end
 
       # ---------------------------------------------------------------------
-      # 4. Locations (frontend/lib/data/locations.js) — each references an
-      #    Area by slug (area_slug below), resolved via a real DB lookup.
-      # ---------------------------------------------------------------------
-      LOCATIONS = [
-        {
-          slug: "kokapet-phase-1", name: "Kokapet Phase 1", area_slug: "kokapet", city: "Hyderabad", pincode: "500075",
-          lat: 17.4142, lng: 78.3178, metro: false, bus: true,
-          nearby_landmarks: ["Financial District", "Neopolis IT Hub"], schools: ["Oakridge International School"],
-          hospitals: ["Continental Hospitals"], airport_distance_km: 24, display_order: 1, status: "Active",
-          seo: { title: "Kokapet Phase 1 Properties", description: "Apartments and villas in Kokapet Phase 1, Hyderabad." },
-        },
-        {
-          slug: "kokapet-neopolis", name: "Kokapet Neopolis", area_slug: "kokapet", city: "Hyderabad", pincode: "500075",
-          lat: 17.4089, lng: 78.3212, metro: false, bus: true,
-          nearby_landmarks: ["TSRTC Neopolis Layout", "Financial District"], schools: ["Oakridge International School"],
-          hospitals: ["Continental Hospitals"], airport_distance_km: 25, display_order: 2, status: "Active",
-          seo: { title: "Kokapet Neopolis Properties", description: "Premium high-rise inventory in Kokapet Neopolis, Hyderabad." },
-        },
-        {
-          slug: "tellapur-main-road", name: "Tellapur Main Road", area_slug: "tellapur", city: "Hyderabad", pincode: "502032",
-          lat: 17.459, lng: 78.253, metro: false, bus: true,
-          nearby_landmarks: ["Wipro Circle", "ORR Exit 2"], schools: ["Sancta Maria International"],
-          hospitals: ["Citizens Specialty Hospital"], airport_distance_km: 30, display_order: 3, status: "Active",
-          seo: { title: "Tellapur Main Road Properties", description: "Villas and open plots along Tellapur Main Road, Hyderabad." },
-        },
-        {
-          slug: "financial-district-core", name: "Financial District Core", area_slug: "financial-district",
-          city: "Hyderabad", pincode: "500032", lat: 17.4239, lng: 78.3776, metro: true, bus: true,
-          nearby_landmarks: ["Wells Fargo", "Salarpuria Sattva Knowledge City"], schools: ["Delhi Public School Nacharam"],
-          hospitals: ["AIG Hospitals"], airport_distance_km: 22, display_order: 4, status: "Active",
-          seo: { title: "Financial District Core Properties", description: "Grade A offices and premium residences in the Financial District core." },
-        },
-        {
-          slug: "nanakramguda", name: "Nanakramguda", area_slug: "financial-district", city: "Hyderabad", pincode: "500032",
-          lat: 17.4176, lng: 78.3691, metro: true, bus: true,
-          nearby_landmarks: ["ISB Hyderabad", "Financial District"], schools: ["Glendale Academy"],
-          hospitals: ["Sunshine Hospitals"], airport_distance_km: 23, display_order: 5, status: "Active",
-          seo: { title: "Nanakramguda Properties", description: "Properties near ISB and the Financial District in Nanakramguda." },
-        },
-        {
-          slug: "gachibowli-central", name: "Gachibowli Central", area_slug: "gachibowli", city: "Hyderabad", pincode: "500032",
-          lat: 17.4401, lng: 78.3489, metro: true, bus: true,
-          nearby_landmarks: ["DLF Cyber City", "Gachibowli Stadium"], schools: ["Delhi Public School Nacharam"],
-          hospitals: ["AIG Hospitals"], airport_distance_km: 28, display_order: 6, status: "Active",
-          seo: { title: "Gachibowli Central Properties", description: "Apartments and commercial spaces in Gachibowli Central, Hyderabad." },
-        },
-        {
-          slug: "miyapur-metro-belt", name: "Miyapur Metro Belt", area_slug: "miyapur", city: "Hyderabad", pincode: "500049",
-          lat: 17.4959, lng: 78.3606, metro: true, bus: true,
-          nearby_landmarks: ["Miyapur Metro Depot", "Mytri Mall"], schools: ["Bloom International"],
-          hospitals: ["KIMS Hospital"], airport_distance_km: 34, display_order: 7, status: "Active",
-          seo: { title: "Miyapur Metro Belt Properties", description: "Metro-connected apartments in the Miyapur Metro Belt, Hyderabad." },
-        },
-        {
-          slug: "narsingi-villas", name: "Narsingi Villas", area_slug: "narsingi", city: "Hyderabad", pincode: "500089",
-          lat: 17.3937, lng: 78.3323, metro: false, bus: true,
-          nearby_landmarks: ["Kokapet Golf Course", "Nanakramguda"], schools: ["Meridian School"],
-          hospitals: ["Care Hospitals Banjara Hills"], airport_distance_km: 26, display_order: 8, status: "Active",
-          seo: { title: "Narsingi Villas Properties", description: "Independent villas and plots in Narsingi's villa-community corridor." },
-        },
-        {
-          slug: "kondapur-main", name: "Kondapur Main", area_slug: "kondapur", city: "Hyderabad", pincode: "500084",
-          lat: 17.4615, lng: 78.3672, metro: false, bus: true,
-          nearby_landmarks: ["Botanical Gardens Mall", "Raheja Mindspace"], schools: ["Glendale Academy"],
-          hospitals: ["Sunshine Hospitals"], airport_distance_km: 29, display_order: 9, status: "Active",
-          seo: { title: "Kondapur Main Properties", description: "Residential and retail properties in Kondapur Main, Hyderabad." },
-        },
-      ].freeze
-
-      def seed_locations!
-        LOCATIONS.each do |row|
-          area = App::Models::Area.first(slug: row[:area_slug])
-          if area.nil?
-            warn "[seed_locations!] skipping '#{row[:slug]}': no area found for slug '#{row[:area_slug]}'"
-            next
-          end
-
-          App::Models::Location.find_or_create(slug: row[:slug]) do |l|
-            l.name = row[:name]
-            l.area_id = area.id
-            l.city = row[:city]
-            l.pincode = row[:pincode]
-            l.lat = row[:lat]
-            l.lng = row[:lng]
-            l.metro = row[:metro]
-            l.bus = row[:bus]
-            l.nearby_landmarks = Sequel.pg_array(row[:nearby_landmarks])
-            l.schools = Sequel.pg_array(row[:schools])
-            l.hospitals = Sequel.pg_array(row[:hospitals])
-            l.airport_distance_km = row[:airport_distance_km]
-            l.display_order = row[:display_order]
-            l.status = row[:status]
-            l.seo = row[:seo]
-          end
-        end
-        puts "Seeded locations: #{App::Models::Location.count}"
-      end
-
-      # ---------------------------------------------------------------------
       # 5. Amenities (frontend/lib/data/amenities.js)
       # ---------------------------------------------------------------------
       AMENITIES = [
@@ -532,7 +433,7 @@ module App
 
       # ---------------------------------------------------------------------
       # 7. Communities (frontend/lib/data/communities.js) — references
-      #    Builder/Area/Location by slug and Amenities by the shared
+      #    Builder/Area by slug and Amenities by the shared
       #    `baseAmenities` id list, all resolved via real DB lookups.
       # ---------------------------------------------------------------------
       BASE_AMENITY_SLUGS = %w[
@@ -668,10 +569,9 @@ module App
         COMMUNITIES.each do |row|
           builder = App::Models::Builder.first(slug: row[:builder_slug])
           area = App::Models::Area.first(slug: row[:area_slug])
-          location = App::Models::Location.first(slug: row[:location_slug])
 
-          if builder.nil? || area.nil? || location.nil?
-            warn "[seed_communities!] skipping '#{row[:slug]}': missing builder/area/location (builder=#{row[:builder_slug]}, area=#{row[:area_slug]}, location=#{row[:location_slug]})"
+          if builder.nil? || area.nil?
+            warn "[seed_communities!] skipping '#{row[:slug]}': missing builder/area (builder=#{row[:builder_slug]}, area=#{row[:area_slug]})"
             next
           end
 
@@ -681,7 +581,6 @@ module App
             c.name = row[:name]
             c.builder_id = builder.id
             c.area_id = area.id
-            c.location_id = location.id
             c.tagline = row[:tagline]
             c.status = row[:status]
             c.featured = row[:featured]
@@ -711,7 +610,7 @@ module App
 
       # ---------------------------------------------------------------------
       # 8. Properties (frontend/lib/data/properties.js) — references
-      #    Community/Builder/Area/Location by slug, Property Type by name
+      #    Community/Builder/Area by slug, Property Type by name
       #    (mock's `type` field, e.g. "Apartment"), and Property Tags by the
       #    mock's tag id strings — all resolved via real DB lookups.
       # ---------------------------------------------------------------------
@@ -848,11 +747,10 @@ module App
           community = App::Models::Community.first(slug: row[:community_slug])
           builder = App::Models::Builder.first(slug: row[:builder_slug])
           area = App::Models::Area.first(slug: row[:area_slug])
-          location = App::Models::Location.first(slug: row[:location_slug])
           property_type = App::Models::PropertyType.first(name: row[:type_name])
 
-          if community.nil? || builder.nil? || area.nil? || location.nil? || property_type.nil?
-            warn "[seed_properties!] skipping '#{row[:slug]}': missing FK (community=#{row[:community_slug]}, builder=#{row[:builder_slug]}, area=#{row[:area_slug]}, location=#{row[:location_slug]}, property_type=#{row[:type_name]})"
+          if community.nil? || builder.nil? || area.nil? || property_type.nil?
+            warn "[seed_properties!] skipping '#{row[:slug]}': missing FK (community=#{row[:community_slug]}, builder=#{row[:builder_slug]}, area=#{row[:area_slug]}, property_type=#{row[:type_name]})"
             next
           end
 
@@ -863,7 +761,6 @@ module App
             p.community_id = community.id
             p.builder_id = builder.id
             p.area_id = area.id
-            p.location_id = location.id
             p.property_type_id = property_type.id
             p.status = row[:status]
             p.price = row[:price]
@@ -2478,7 +2375,6 @@ module App
       def run!
         puts "== Seeding sample data: Phase 1 (Property Catalog) =="
         seed_areas!
-        seed_locations!
         seed_builders!
         seed_property_types!
         seed_amenities!

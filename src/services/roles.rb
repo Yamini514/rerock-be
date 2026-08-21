@@ -4,7 +4,7 @@ class App::Services::Roles < App::Services::Base
   # Roles are a small, curated hierarchy list (unlimited custom roles, but
   # never a paginated-list-sized set) — ordered by level (0 = highest
   # authority first), same "curated order, not created_at desc" convention
-  # PropertyTypes/Areas/Locations use for their own small taxonomies. Search
+  # PropertyTypes/Areas use for their own small taxonomies. Search
   # matches either name or description; an optional exact `status` filter
   # backs an Active/Archived toggle if the frontend ever adds one (mirrors
   # every other Property-Catalog-style resource's `qs[:archived]` scope, just
@@ -29,7 +29,7 @@ class App::Services::Roles < App::Services::Base
   # lib/data/staff.js's addRole() derives a slug-shaped id (`role-${Date.now()}`)
   # when the caller doesn't supply one; replicate that here from the real
   # `name` field instead, same "default computed server-side rather than
-  # pushed onto the frontend" convention PropertyTypes/Areas/Locations use for
+  # pushed onto the frontend" convention PropertyTypes/Areas use for
   # their own defaulted fields.
   def create
     data = data_for(:save)

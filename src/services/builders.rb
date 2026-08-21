@@ -6,7 +6,7 @@ class App::Services::Builders < App::Services::Base
   # it as a query param (same convention as Users#list's `search`). `rating`
   # dropped from here — it's no longer a real column value to sort on, see
   # `builder_stats` below.
-  SORTABLE_COLUMNS = %w[name created_at status].freeze
+  SORTABLE_COLUMNS = %w[name created_at].freeze
 
   def list
     ds = model
@@ -38,7 +38,7 @@ class App::Services::Builders < App::Services::Base
   def self.fields
     {
       save: [
-        :slug, :name, :established, :projects_count, :units_delivered, :status,
+        :slug, :name, :established, :projects_count, :units_delivered,
         :headquarters, :sqft_delivered, :website, :email, :phone, :description, :headline,
         :awards, :certifications, :documents, :logo, :seo, :archived
       ]
@@ -48,7 +48,7 @@ class App::Services::Builders < App::Services::Base
   private
 
   def default_stats
-    { 'rating' => 0, 'review_count' => 0, 'community_count' => 0, 'property_count' => 0 }
+    { 'rating' => 0, 'review_count' => 0, 'community_count' => 0, 'property_count' => 0, 'live_property_count' => 0 }
   end
 
   # One grouped pass computing everything BuilderForm.js / the admin list
@@ -92,12 +92,21 @@ class App::Services::Builders < App::Services::Base
     # `property_count` excludes Archived listings from the catalog count the
     # same way it always did — `publish_status` is the single source of
     # truth now (see models/property.rb), so this reads that instead of the
-    # old, now-retired `archived` boolean.
+    # old, now-retired `archived` boolean. It deliberately still includes
+    # Sold properties — BuilderForm.js's delete-guard relies on this number
+    # staying the full total.
     property_scope = Property.exclude(publish_status: 'Archived')
     property_scope = property_scope.where(builder_id: builder_id) if builder_id
     property_counts = property_scope.group_and_count(:builder_id).as_hash(:builder_id, :count)
 
-    builder_ids = (community_counts.keys + property_counts.keys + stars_by_builder.keys).uniq
+    # `live_property_count` is the sold-aware sibling used for the public
+    # builder directory display — same Published-and-not-Sold definition as
+    # Communities#has_live_properties?/#live_community_ids.
+    live_property_scope = Property.where(publish_status: 'Published').exclude(status: 'Sold')
+    live_property_scope = live_property_scope.where(builder_id: builder_id) if builder_id
+    live_property_counts = live_property_scope.group_and_count(:builder_id).as_hash(:builder_id, :count)
+
+    builder_ids = (community_counts.keys + property_counts.keys + stars_by_builder.keys + live_property_counts.keys).uniq
     builder_ids.each_with_object({}) do |b_id, out|
       stars = stars_by_builder[b_id] || []
       out[b_id] = {
@@ -105,6 +114,7 @@ class App::Services::Builders < App::Services::Base
         'review_count' => stars.size,
         'community_count' => community_counts[b_id] || 0,
         'property_count' => property_counts[b_id] || 0,
+        'live_property_count' => live_property_counts[b_id] || 0,
       }
     end
   end

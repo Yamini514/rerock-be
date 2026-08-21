@@ -56,7 +56,7 @@ class App::Services::Properties < App::Services::Base
   def self.fields
     {
       save: [
-        :slug, :title, :community_id, :builder_id, :area_id, :location_id, :property_type_id,
+        :slug, :title, :community_id, :builder_id, :area_id, :property_type_id,
         :status, :price, :price_per_sqft, :built_up_area, :land_area,
         :bedrooms, :bathrooms, :balconies, :facing, :floor,
         :images, :highlights, :description, :floor_plans,
