@@ -63,22 +63,19 @@ class App::Models::Agent < Sequel::Model
       errors.add(:phone, "Can't be blank") if phone.blank?
       errors.add(:phone, "must be a valid 10-digit phone number") if phone.present? && !phone.match?(PHONE_REGEXP)
     end
-    if new? || column_changed?(:territory)
-      errors.add(:territory, "Can't be blank") if territory.blank?
-    end
-    if new? || column_changed?(:specialization)
-      errors.add(:specialization, "Can't be blank") if specialization.blank?
-    end
+    # Territory/Specialization/Profession are optional (Admin's Add Agent
+    # form no longer requires them — filled in later via Edit if needed);
+    # none of the three have a format to check, so there's nothing left to
+    # validate here once presence isn't required.
     if new? || column_changed?(:experience_years)
-      errors.add(:experience_years, "Can't be blank") if experience_years.nil?
       errors.add(:experience_years, "must be a positive number") if experience_years.present? && experience_years.to_i <= 0
     end
+    # Commission Rate is optional on create too (Admin's Add Agent form
+    # dropped the field entirely — the column's own DB default of 1.5%,
+    # migrations/0019, applies instead); still validated for range whenever
+    # a value IS present (create or edit).
     if new? || column_changed?(:commission_rate)
-      errors.add(:commission_rate, "Can't be blank") if commission_rate.nil?
       errors.add(:commission_rate, "must be between 0 and 100") if commission_rate.present? && !(0..100).cover?(commission_rate.to_f)
-    end
-    if new? || column_changed?(:profession)
-      errors.add(:profession, "Can't be blank") if profession.blank?
     end
     if new? || column_changed?(:date_of_birth)
       errors.add(:date_of_birth, "Can't be blank") if date_of_birth.nil?
@@ -86,6 +83,35 @@ class App::Models::Agent < Sequel::Model
     errors.add(:date_of_birth, "must result in an age between 18 and 49") if date_of_birth.present? && age && !age.between?(18, 49)
 
     validate_strong_area_ids
+    validate_tasks
+    validate_attendance
+    validate_properties_assigned
+  end
+
+  # Admin Detail page's Tasks/Attendance/Properties Assigned tabs
+  # (EditableList.js) had no validation anywhere — not here, not on the
+  # frontend — so a row with a blank required field (e.g. an Attendance
+  # entry with no date) saved silently and then couldn't render sensibly.
+  # Each check only runs when its own column actually changed, same
+  # `new? || column_changed?` convention as every other field above.
+  def validate_tasks
+    return unless new? || column_changed?(:tasks)
+
+    errors.add(:tasks, "each item needs a title") if (tasks || []).any? { |t| t['title'].blank? }
+  end
+
+  def validate_attendance
+    return unless new? || column_changed?(:attendance)
+
+    entries = attendance || []
+    errors.add(:attendance, "each item needs a date") if entries.any? { |a| a['date'].blank? }
+    errors.add(:attendance, "each item needs a status") if entries.any? { |a| a['status'].blank? }
+  end
+
+  def validate_properties_assigned
+    return unless new? || column_changed?(:properties_assigned)
+
+    errors.add(:properties_assigned, "each item needs a property") if (properties_assigned || []).any? { |p| p['name'].blank? }
   end
 
   # Not marked `private` — every other method in this file (live_stats,
@@ -164,7 +190,27 @@ class App::Models::Agent < Sequel::Model
       title: 'Registration approved',
       message: 'Your registration has been approved. You can now log in to your account.'
     )
+    log_activity!(title: 'Registration approved', description: 'Account activated — can now sign in.')
     send_approval_email(ENV['AGENT_APP_URL'] || 'http://localhost:3000/agent')
+  end
+
+  # Appends a system-generated row to this agent's own Activity Log
+  # (Admin Detail page's own tab) — same shape an admin's manual "Add
+  # Activity" entry already saves ({title, time, description, done}), so
+  # both sources render through the exact same Timeline component with no
+  # special-casing. Called from the five real "something happened to this
+  # agent" moments (registration approved, profile updated, site visit
+  # status change, follow-up assigned, commission earned) alongside each
+  # one's existing Notification.create, so the log fills itself in instead
+  # of relying on an admin to remember to write it by hand.
+  def log_activity!(title:, description: nil)
+    self.activity_log = (activity_log || []) + [{
+      'title' => title,
+      'time' => Time.now.strftime('%Y-%m-%d %H:%M'),
+      'description' => description,
+      'done' => true,
+    }]
+    save_changes(validate: false)
   end
 
   # The notice that actually reaches the agent in time — unlike the in-app
@@ -260,6 +306,24 @@ class App::Models::Agent < Sequel::Model
       approved_reviews = App::Models::Review.where(reviewable_type: 'Agent', reviewable_id: id, status: 'Approved').all
       avg_rating = approved_reviews.empty? ? 0 : (approved_reviews.sum(&:stars).to_f / approved_reviews.size).round(1)
 
+      # Real closed-deal history for this agent, same source `bookings`/
+      # `revenue` above already read — replaces the old admin-typed
+      # `properties_sold` jsonb column entirely (see services/agents.rb's
+      # now-shorter :save whitelist), so the Admin Detail page's "Properties
+      # Sold" list can never drift from what actually closed.
+      sold_properties = closed_deals
+        .sort_by { |d| d.closing_date || d.created_at }
+        .reverse
+        .map do |d|
+          {
+            'id' => "deal-#{d.id}",
+            'name' => d.property_name.presence || d.property&.title || 'Property',
+            'propertyId' => d.property_id,
+            'value' => d.value,
+            'date' => (d.closing_date || d.created_at)&.to_s,
+          }
+        end
+
       {
         'leads_assigned' => leads_count,
         'bookings' => deals_count,
@@ -270,6 +334,8 @@ class App::Models::Agent < Sequel::Model
         'conversion_rate' => leads_count.zero? ? 0 : ((deals_count / leads_count.to_f) * 100).round(1),
         'commission_earned' => closed_deals.sum { |d| deal_commission.call(d) },
         'commission_monthly' => monthly,
+        'properties_sold' => sold_properties,
+        'default_commission_rate' => DEFAULT_COMMISSION_RATE_PCT,
       }
     end
   end

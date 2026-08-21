@@ -99,6 +99,13 @@ class App::Services::Leads < App::Services::Base
     end
   end
 
+  # Canonical funnel stage order (GET /leads/statuses) — exposes
+  # Lead::STAGE_ORDER so the Admin Dashboard's Lead Funnel widget can fetch
+  # it instead of keeping its own duplicate copy of the same list.
+  def statuses
+    return_success(Lead::STAGE_ORDER)
+  end
+
   def self.fields
     {
       save: [

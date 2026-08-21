@@ -22,6 +22,28 @@ class App::Services::FollowUps < App::Services::Base
     end
   end
 
+  # Overridden (rather than left as Base#create/#update) only to run
+  # FollowUp#notify_agent_of_assignment! after a successful save — see that
+  # method for why it's safe to call unconditionally on both create and
+  # update, and to return with_overdue instead of a plain to_pos, matching
+  # what #list above already returns per row.
+  def create
+    obj = model.new(data_for(:save))
+    save(obj) do |o|
+      o.notify_agent_of_assignment!
+      return_success(o.with_overdue)
+    end
+  end
+
+  def update(data = nil)
+    data ||= data_for(:save)
+    item.set_fields(data, data.keys)
+    save(item) do |o|
+      o.notify_agent_of_assignment!
+      return_success(o.with_overdue)
+    end
+  end
+
   def self.fields
     {
       save: [

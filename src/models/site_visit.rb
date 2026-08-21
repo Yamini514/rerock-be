@@ -173,4 +173,35 @@ class App::Models::SiteVisit < Sequel::Model
       message: copy[1]
     )
   end
+
+  # Agent Network's own analogue of #notify_client_of_status! above — same
+  # three transitions, same "explicit call after save, guarded by an
+  # actual-change check" convention, called alongside it from
+  # services/site_visits.rb#update. No agent to notify for a visit nobody's
+  # assigned to yet (agent_id blank, e.g. a fresh guest-sourced request).
+  def notify_agent_of_status!
+    return unless column_changed?(:status)
+    return unless %w[Cancelled Rescheduled Completed].include?(status)
+    return if agent_id.blank?
+
+    agent = App::Models::Agent[agent_id]
+    return if agent.nil?
+
+    where = property.present? ? " for #{property.title}" : ""
+    copy = {
+      'Cancelled' => ['Site visit cancelled', "The site visit#{where} with #{client_name} on #{date} has been cancelled."],
+      'Rescheduled' => ['Site visit rescheduled', "The site visit#{where} with #{client_name} has been rescheduled to #{date}#{time.present? ? " at #{time}" : ""}."],
+      'Completed' => ['Site visit completed', "The site visit#{where} with #{client_name} is marked complete."],
+    }[status]
+
+    App::Models::Notification.create(
+      audience: 'agent',
+      recipient_id: agent.id,
+      type: 'visit',
+      icon: status == 'Cancelled' ? 'XCircle' : (status == 'Rescheduled' ? 'CalendarClock' : 'CalendarCheck'),
+      title: copy[0],
+      message: copy[1]
+    )
+    agent.log_activity!(title: copy[0], description: copy[1])
+  end
 end

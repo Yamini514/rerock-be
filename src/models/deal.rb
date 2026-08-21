@@ -131,6 +131,22 @@ class App::Models::Deal < Sequel::Model
     self.agent_commission_rate = rate
     self.agent_commission_amount = (value.to_i * rate / 100.0).round
     save_changes(validate: false)
+
+    # Same "tell them the one moment that matters" scope as
+    # Commission#notify_ram_of_status! — fires exactly once per deal, right
+    # alongside the stamping above (both guarded by the same
+    # agent_commission_amount.present? early-return), never re-fired by a
+    # later, unrelated edit to this already-closed deal.
+    commission_message = "A commission of #{format_inr(agent_commission_amount)} was calculated for your closed deal#{property_name.present? ? " (#{property_name})" : ""}."
+    App::Models::Notification.create(
+      audience: 'agent',
+      recipient_id: agent.id,
+      type: 'commission',
+      icon: 'Wallet',
+      title: 'Commission earned',
+      message: commission_message
+    )
+    agent.log_activity!(title: 'Commission earned', description: commission_message)
   end
 
   # Closing a Deal moves real inventory, but the linked Property's own
@@ -147,19 +163,28 @@ class App::Models::Deal < Sequel::Model
   # this method itself set. An admin's own manual override to something
   # else (e.g. Reserved for a different buyer in the meantime) is never
   # clobbered by a reopened deal.
+  #
+  # The "reached Closed" branch is idempotent via the property's own current
+  # status rather than a `column_changed?(:stage)` gate — that check is
+  # unreliable for a deal *created* already at stage: 'Closed' (see this
+  # model's own before_validation comment on column_changed? and `.new`),
+  # same reasoning ensure_commission_for_closure!/sync_client_investment!/
+  # sync_lead_status_for_closure! already use instead of it. The "reopened"
+  # branch still needs column_changed?/column_change, though — reverting to
+  # Available only makes sense as a reaction to an actual transition *away*
+  # from Closed on an existing deal, which a freshly created record can
+  # never have.
   def sync_property_status_for_stage!
-    return unless column_changed?(:stage)
     return if property_id.nil?
 
     prop = property
     return if prop.nil?
 
-    old_stage, new_stage = column_change(:stage)
-
-    if new_stage == 'Closed'
+    if stage == 'Closed'
       prop.update(status: 'Sold') unless prop.status == 'Sold'
-    elsif old_stage == 'Closed'
-      prop.update(status: 'Available') if prop.status == 'Sold'
+    elsif column_changed?(:stage)
+      old_stage, = column_change(:stage)
+      prop.update(status: 'Available') if old_stage == 'Closed' && prop.status == 'Sold'
     end
   end
 
@@ -276,5 +301,25 @@ class App::Models::Deal < Sequel::Model
   rescue => e
     App.logger.error("[Deal] sync_lead_status_for_closure! failed for Deal ##{id}: #{e.message}")
     App.logger.error(e.backtrace)
+  end
+
+  private
+
+  # Indian digit grouping (last 3 digits, then pairs) — matches the
+  # frontend's own `formatINRFull` (lib/utils.js's `toLocaleString("en-IN")`)
+  # so a notification's amount reads the same way as the UI it links back
+  # to. Duplicated from Commission#format_inr rather than shared — same
+  # small-per-model-helper convention as this codebase's own bcrypt Password
+  # wrapper on every auth-bearing model.
+  def format_inr(amount)
+    digits = amount.to_i.abs.to_s
+    if digits.length <= 3
+      grouped = digits
+    else
+      last3 = digits[-3..]
+      rest = digits[0..-4].reverse.scan(/\d{1,2}/).join(',').reverse
+      grouped = "#{rest},#{last3}"
+    end
+    "₹#{grouped}"
   end
 end
