@@ -12,6 +12,7 @@ class App::Services::Commissions < App::Services::Base
   def list
     ds = model.order(Sequel.desc(:created_at))
     ds = ds.where(ram_id: qs[:ram_id]) if qs[:ram_id].present?
+    ds = ds.where(client_id: qs[:client_id]) if qs[:client_id].present?
     ds = ds.where(status: qs[:status]) if qs[:status].present?
     ds = ds.where(referral_id: qs[:referral_id]) if qs[:referral_id].present?
     ds = ds.where(deal_id: qs[:deal_id]) if qs[:deal_id].present?
@@ -54,7 +55,7 @@ class App::Services::Commissions < App::Services::Base
 
     item.set_fields(data, data.keys)
     save(item) do |o|
-      o.notify_ram_of_status! if status_changing
+      o.notify_of_status! if status_changing
       o.sync_referral_payout_status! if status_changing
       return_success(o.to_pos)
     end
@@ -63,7 +64,7 @@ class App::Services::Commissions < App::Services::Base
   def self.fields
     {
       save: [
-        :referral_id, :deal_id, :ram_id, :ram_member_id, :sale_amount, :commission_rate,
+        :referral_id, :deal_id, :ram_id, :ram_member_id, :client_id, :sale_amount, :commission_rate,
         :commission_amount, :status, :approved_by, :approved_at, :paid_at, :notes
       ]
     }

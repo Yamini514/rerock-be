@@ -117,7 +117,7 @@ class App::Services::Clients < App::Services::Base
       save: [
         :name, :email, :phone, :avatar, :joined, :status,
         :assigned_agent_slug, :agent_id, :assigned_ram_id, :ram_member_id, :type, :city,
-        :referral_source, :referred_by_id,
+        :referral_source, :referred_by_id, :commission_rate,
         :invested_properties, :notes, :communication_log, :timeline, :archived
       ]
     }

@@ -321,10 +321,31 @@ class App::Routes < Roda
           end
 
           # The client's own referral code + who has signed up using it — see
-          # services/client_referrals.rb for why this reads the real
+          # services/client_referrals.rb for why `mine` reads the real
           # Client#referred_by_id self-join instead of the separate,
-          # name-matched admin `referrals` table.
-          r.get('referrals') { ClientReferrals[r].mine }
+          # name-matched admin `referrals` table. `invite` is the separate
+          # direct "Invite a Friend" path (name/email/phone -> a real Lead +
+          # Referral immediately, no click needed) — see
+          # services/client_referrals.rb#invite.
+          r.on 'referrals' do
+            r.get { ClientReferrals[r].mine }
+            r.post('invite') { ClientReferrals[r].invite }
+          end
+
+          # Client Portal's own referral-link generator (general or
+          # property-specific) — see services/client_referral_links.rb.
+          # Same shape as the RAM Portal's own 'referral-links' block above.
+          r.on 'referral-links' do
+            r.get { ClientReferralLinks[r].mine }
+            r.post { ClientReferralLinks[r].create }
+          end
+
+          # Read-only — the client's own slice of the real Commission table,
+          # same "reuse the admin table filtered to the authenticated
+          # identity" convention as RamPortal#my_commissions above.
+          r.on 'commissions' do
+            r.get { ClientReferrals[r].commissions }
+          end
         end
       end
 

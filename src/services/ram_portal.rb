@@ -180,8 +180,8 @@ class App::Services::RamPortal < App::Services::Base
   # Status transitions only (Enquiry Stage -> Site Visit Scheduled ->
   # Purchase Completed/Cancelled) — same "the portal can move its own
   # record through the funnel, but never touch reward/payout" reasoning as
-  # create above. notify_ram_of_status! is a no-op unless the new status is
-  # one the RAM would want a nudge about (see models/referral.rb).
+  # create above. notify_referrer_of_status! is a no-op unless the new
+  # status is one the referrer would want a nudge about (see models/referral.rb).
   def update_my_referral
     ram = current_ram
     return_errors!("Not signed in.", 401) if ram.nil?
@@ -193,7 +193,7 @@ class App::Services::RamPortal < App::Services::Base
     allowed = params.slice(:status)
     referral.set_fields(allowed, allowed.keys)
     save(referral) do |o|
-      o.notify_ram_of_status!
+      o.notify_referrer_of_status!
       return_success(o.to_pos)
     end
   end

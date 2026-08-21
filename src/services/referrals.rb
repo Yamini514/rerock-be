@@ -13,6 +13,10 @@ class App::Services::Referrals < App::Services::Base
     ds = ds.where(client_id: qs[:client_id]) if qs[:client_id].present?
     ds = ds.where(property_id: qs[:property_id]) if qs[:property_id].present?
     ds = ds.where(agent_slug: qs[:agent_slug]) if qs[:agent_slug].present?
+    # Used by the Client Detail page's own "Referrals Made" section
+    # (app/admin/(portal)/clients/[id]/ClientDetailClient.js) — same
+    # "exact filter, own query param" shape as ram_id above.
+    ds = ds.where(referrer_client_id: qs[:referrer_client_id]) if qs[:referrer_client_id].present?
     if qs[:search].present?
       # NOTE: same fix as leads.rb/site_visits.rb — `Dataset#or` ORs the new
       # condition against the dataset's *entire* existing WHERE clause, which
@@ -25,7 +29,7 @@ class App::Services::Referrals < App::Services::Base
       )
     end
 
-    ds = ds.eager(:client, :property, :deals, :commissions)
+    ds = ds.eager(:client, :property, :deals, :commissions, :referrer_client)
 
     if qs.key?(:page)
       total = ds.count
@@ -36,15 +40,15 @@ class App::Services::Referrals < App::Services::Base
   end
 
   # Status transitions and reward/date edits all ride the standard
-  # PUT/update below, overridden only to run Referral#notify_ram_of_status!
-  # after a successful save — same call site as
-  # RamPortal#update_my_referral's own, since an admin (not just the RAM)
-  # can also be the one who marks a referral Purchase Completed/Cancelled.
+  # PUT/update below, overridden only to run
+  # Referral#notify_referrer_of_status! after a successful save — same call
+  # site as RamPortal#update_my_referral's own, since an admin (not just the
+  # RAM) can also be the one who marks a referral Purchase Completed/Cancelled.
   def update(data = nil)
     data ||= data_for(:save)
     item.set_fields(data, data.keys)
     save(item) do |o|
-      o.notify_ram_of_status!
+      o.notify_referrer_of_status!
       return_success(o.to_pos)
     end
   end
@@ -55,7 +59,7 @@ class App::Services::Referrals < App::Services::Base
     {
       save: [
         :ram_id, :ram_member_id, :type, :referrer, :referred, :status, :reward, :date, :payout_status, :archived,
-        :client_id, :property_id, :community_id, :lead_id, :agent_slug
+        :client_id, :property_id, :community_id, :lead_id, :agent_slug, :referrer_client_id
       ]
     }
   end
@@ -82,6 +86,7 @@ class App::Services::Referrals < App::Services::Base
         'customerName' => r.client&.name || r.referred,
         'propertyTitle' => r.property&.title,
         'agentName' => agents_by_slug[r.agent_slug],
+        'referrerClientName' => r.referrer_client&.name,
         'purchaseStatus' => latest_deal&.stage,
         'commissionStatus' => latest_commission&.status,
         'commissionAmount' => latest_commission&.commission_amount

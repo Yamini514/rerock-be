@@ -3,6 +3,13 @@ class App::Models::Commission < Sequel::Model
   many_to_one :deal
   many_to_one :ram_member
 
+  # A Client Referral's payee (migrations/0105's referrer_client_id) — a
+  # real FK, unlike ram_id/ram_member_id above, since Referral#referrer_client_id
+  # already is the client's real id, not a deferred slug needing a sync hook.
+  # Exactly one of ram_id or client_id is ever set on a given row (see
+  # Deal#ensure_ram_referral_commission!/#ensure_client_referral_commission!).
+  many_to_one :client
+
   # Same additive-FK-alongside-the-slug sync as models/lead.rb's own
   # sync_ram_reference! — see that file's comment.
   def before_validation
@@ -52,26 +59,42 @@ class App::Models::Commission < Sequel::Model
   end
 
   # Called after every status-changing save (services/commissions.rb#update,
-  # Deal#ensure_commission_for_closure!'s initial creation) — tells the RAM
-  # about their commission, but deliberately only at the one moment that
-  # matters to them ("a purchase you referred just earned you a commission"),
-  # not every later admin-side lifecycle step (eligible/approved/processing/
-  # paid/rejected/cancelled) — those stay visible to the RAM on their own
-  # Income page, just without a push for each one, per product decision.
-  def notify_ram_of_status!
+  # Deal#ensure_ram_referral_commission!/#ensure_client_referral_commission!'s
+  # initial creation) — tells whichever real payee this row belongs to (RAM
+  # or Client — exactly one of ram_id/client_id is ever set) about their
+  # commission, but deliberately only at the one moment that matters to
+  # them ("a purchase you referred just earned you a commission"), not
+  # every later admin-side lifecycle step (eligible/approved/processing/
+  # paid/rejected/cancelled) — those stay visible on the payee's own
+  # Income/Referrals page, just without a push for each one, per product
+  # decision. Renamed from the RAM-only notify_ram_of_status! now that a
+  # Commission can also belong to a Client (migrations/0105's
+  # referrer_client_id).
+  def notify_of_status!
     return unless status == 'PENDING'
 
-    ram = App::Models::RamMember.where(slug: ram_id).first
-    return if ram.nil?
+    if ram_id.present?
+      ram = App::Models::RamMember.where(slug: ram_id).first
+      return if ram.nil?
 
-    App::Models::Notification.create(
-      audience: 'ram',
-      recipient_id: ram.id,
-      type: 'commission',
-      icon: 'Wallet',
-      title: 'Commission added',
-      message: "A commission of #{format_inr(commission_amount)} was calculated for your referral."
-    )
+      App::Models::Notification.create(
+        audience: 'ram',
+        recipient_id: ram.id,
+        type: 'commission',
+        icon: 'Wallet',
+        title: 'Commission added',
+        message: "A commission of #{format_inr(commission_amount)} was calculated for your referral."
+      )
+    elsif client_id.present?
+      App::Models::Notification.create(
+        audience: 'client',
+        recipient_id: client_id,
+        type: 'commission',
+        icon: 'Wallet',
+        title: 'Commission added',
+        message: "A commission of #{format_inr(commission_amount)} was calculated for your referral."
+      )
+    end
   end
 
   # Referral#payout_status ("whether the flat reward amount has actually
@@ -84,7 +107,7 @@ class App::Models::Commission < Sequel::Model
   # contradictory info for the same payout. Called after every
   # status-changing save (services/commissions.rb#update), same "explicit
   # call after save, guarded by an actual-change check" convention as
-  # notify_ram_of_status! above. PAID is a terminal state (see
+  # notify_of_status! above. PAID is a terminal state (see
   # ALLOWED_TRANSITIONS — nothing can move away from it once reached), so
   # unlike Deal's property-status sync there's no reverse/reopen case to
   # handle here.
