@@ -47,7 +47,7 @@ class App::Services::PublicBrochureRequests < App::Services::Base
         community_id: community.id,
         source: "Brochure Download",
         priority: "Medium",
-        status: "New",
+        status: "Enquiry",
         timeline: [{ type: "Note", note: brochure_note(community, document_name), date: Time.now.strftime("%Y-%m-%d") }]
       )
       save(lead) { finalize_brochure_request!(lead, community, name, document_name) }

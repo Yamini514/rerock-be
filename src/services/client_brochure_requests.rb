@@ -28,7 +28,7 @@ class App::Services::ClientBrochureRequests < App::Services::Base
       community_id: community.id,
       source: "Client Portal",
       priority: "Medium",
-      status: "New",
+      status: "Enquiry",
       timeline: [{ type: "Note", note: "Requested brochure#{document_name.present? ? ": #{document_name}" : ""} for #{community.name}.", date: Time.now.strftime("%Y-%m-%d") }]
     )
 
