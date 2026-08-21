@@ -79,17 +79,30 @@ class App::Models::Deal < Sequel::Model
   # (eligible/approved/processing/paid/rejected) stays an explicit admin
   # decision via services/commissions.rb, never automatic.
   #
+  # A referral has at most one real payee behind it — either a RAM
+  # (ref.ram_id) or a Client referrer (ref.referrer_client_id,
+  # migrations/0105) — so each path below creates its own Commission row,
+  # guarded independently (by whether a row for *that* payee already
+  # exists on this deal) rather than a single "any commission already
+  # exists" guard, so neither path can block the other from ever firing.
+  def ensure_commission_for_closure!
+    return unless stage == 'Closed'
+    return if referral_id.nil?
+
+    ref = referral
+    return if ref.nil?
+
+    ensure_ram_referral_commission!(ref)
+    ensure_client_referral_commission!(ref)
+  end
+
   # Rate priority: the specific Property's own `commission_rate`
   # (migrations/0099) first — it's the more specific override when an
   # admin has set one — then the referring RAM's own `default_commission_
   # rate` (migrations/0061), then the flat DEFAULT_COMMISSION_RATE_PCT.
-  def ensure_commission_for_closure!
-    return unless stage == 'Closed'
-    return if referral_id.nil?
-    return if App::Models::Commission.where(deal_id: id).first
-
-    ref = referral
-    return if ref.nil? || ref.ram_id.blank?
+  def ensure_ram_referral_commission!(ref)
+    return if ref.ram_id.blank?
+    return if App::Models::Commission.where(deal_id: id).exclude(ram_id: nil).first
 
     ram = App::Models::RamMember.where(slug: ref.ram_id).first
     rate = property&.commission_rate.presence || ram&.default_commission_rate.presence || DEFAULT_COMMISSION_RATE_PCT
@@ -104,7 +117,36 @@ class App::Models::Deal < Sequel::Model
       commission_amount: amount,
       status: 'PENDING'
     )
-    commission.notify_ram_of_status!
+    commission.notify_of_status!
+  end
+
+  # Client-referrer analogue of ensure_ram_referral_commission! above — same
+  # rate priority (the Property's own override first), just falling back to
+  # the referring Client's own `commission_rate` (migrations/0105) instead
+  # of a RAM's. Independent of, and in addition to, the RAM path: a deal
+  # only ever has one of ref.ram_id/ref.referrer_client_id set, so the two
+  # never actually compete over the same referral, but each still gets its
+  # own full commission rather than splitting one.
+  def ensure_client_referral_commission!(ref)
+    return if ref.referrer_client_id.blank?
+    return if App::Models::Commission.where(deal_id: id).exclude(client_id: nil).first
+
+    referrer = ref.referrer_client
+    return if referrer.nil?
+
+    rate = property&.commission_rate.presence || referrer.commission_rate.presence || DEFAULT_COMMISSION_RATE_PCT
+    amount = (value.to_i * rate / 100.0).round
+
+    commission = App::Models::Commission.create(
+      referral_id: ref.id,
+      deal_id: id,
+      client_id: referrer.id,
+      sale_amount: value.to_i,
+      commission_rate: rate,
+      commission_amount: amount,
+      status: 'PENDING'
+    )
+    commission.notify_of_status!
   end
 
   # Agent Network's per-agent analogue of the RAM commission hook above —

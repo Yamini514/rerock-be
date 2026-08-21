@@ -271,12 +271,16 @@ class App::Services::Base
   # Creates a Lead + Referral together in one transaction, with duplicate
   # detection and automatic Property -> Agent carry-over — the shared core
   # behind every entry point that turns a referred prospect into real CRM
-  # rows: RamPortal#create_my_referral (an authenticated RAM's own manual
-  # referral) and PublicContact#create/PublicSiteVisits#create (an anonymous
-  # visitor converting through a RAM's shared referral link — see
-  # services/public_referral_links.rb). Halts via return_errors! (400/409)
-  # on failure, same as any other guard-clause-heavy service method — a
-  # caller past this line can assume both records were created.
+  # rows: RamPortal#create_my_referral / ClientReferrals#invite (a RAM's or
+  # Client's own direct, no-click-needed referral) and
+  # PublicBrochureRequests#create/PublicSiteVisits#create (an anonymous
+  # visitor converting through a RAM- or Client-owned shared referral link —
+  # see services/public_referral_links.rb). Exactly one of `ram_id:`/
+  # `referrer_client_id:` is set per call, mirroring ReferralLink's own
+  # "owned by exactly one" rule (models/referral_link.rb). Halts via
+  # return_errors! (400/409) on failure, same as any other guard-clause-heavy
+  # service method — a caller past this line can assume both records were
+  # created.
   #
   # BUSINESS DECISION (undocumented anywhere else in this codebase, so
   # recorded here): duplicate detection matches phone/email against
@@ -286,7 +290,7 @@ class App::Services::Base
   # "first accepted referral owns the customer." A match with no active
   # referral links the new Lead/Referral to that real Client instead of
   # creating a duplicate contact.
-  def create_referral_with_lead!(name:, phone:, email:, property_id:, ram_id:, referrer_name:, type:, source:, referral_link_id: nil, community_id: nil, date: nil, note: nil, budget: 0)
+  def create_referral_with_lead!(name:, phone:, email:, property_id:, referrer_name:, type:, source:, ram_id: nil, referrer_client_id: nil, referral_link_id: nil, community_id: nil, date: nil, note: nil, budget: 0)
     return_errors!("Referred person's name is required.", 400) if name.blank?
     return_errors!("Referred person's phone number is required.", 400) if phone.blank?
 
@@ -344,6 +348,7 @@ class App::Services::Base
 
       referral = Referral.new(
         ram_id: ram_id,
+        referrer_client_id: referrer_client_id,
         type: type,
         referrer: referrer_name,
         referred: name,

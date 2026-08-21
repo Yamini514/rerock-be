@@ -159,12 +159,16 @@ class App::Services::ClientAuth < App::Services::Base
   # admin-managed-only (Clients, via /admin/clients). `invested_properties`
   # is intentionally excluded too: a client shouldn't be able to add a
   # holding to their own portfolio by editing their profile — that's an
-  # admin/advisor action recording a real transaction.
+  # admin/advisor action recording a real transaction. `bank_details`
+  # (migrations/0103) is the one field here that's the client's own and
+  # ONLY the client's own — deliberately left out of Clients#fields' save
+  # list too, so admin can view it on the Client Detail page to process a
+  # referral payout but never overwrite it themselves.
   def update_profile
     client = CurrentClient.client_obj
     return_errors!("Not signed in.", 401) if client.nil?
 
-    allowed = params.slice(:name, :email, :phone, :avatar, :city, :type, :notes, :communication_log, :timeline)
+    allowed = params.slice(:name, :email, :phone, :avatar, :city, :type, :notes, :communication_log, :timeline, :bank_details)
 
     if allowed[:email].present?
       new_email = allowed[:email].strip.downcase

@@ -25,18 +25,30 @@ class App::Services::PublicBrochureRequests < App::Services::Base
     link = referral_code.present? ? ReferralLink.where(code: referral_code, active: true).first : nil
 
     if link
-      ram = RamMember.where(slug: link.ram_id).first
+      # A link is owned by exactly one of a RAM member or a Client
+      # (models/referral_link.rb#validate) — resolve whichever one it is,
+      # same branching as services/public_referral_links.rb#click.
+      if link.ram_id.present?
+        referrer_name = RamMember.where(slug: link.ram_id).first&.name || "Referral Link"
+        ram_id = link.ram_id
+        referrer_client_id = nil
+      else
+        referrer_name = Client[link.client_id]&.name || "Referral Link"
+        ram_id = nil
+        referrer_client_id = link.client_id
+      end
+
       lead, = create_referral_with_lead!(
         name: name, phone: phone, email: email.presence,
-        property_id: nil, ram_id: link.ram_id, referrer_name: ram&.name || "Referral Link",
-        type: "Referral Link", source: "Referral Link", referral_link_id: link.id
+        property_id: nil, ram_id: ram_id, referrer_client_id: referrer_client_id,
+        referrer_name: referrer_name, type: "Referral Link", source: "Referral Link", referral_link_id: link.id
       )
       Notification.create(
         audience: "admin",
         type: "referral",
         icon: "Gift",
         title: "New referral",
-        message: "#{ram&.name || 'A referral link'} brought in a new prospect: #{name}."
+        message: "#{referrer_name} brought in a new prospect: #{name}."
       )
       finalize_brochure_request!(lead, community, name, document_name)
     else

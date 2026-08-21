@@ -15,6 +15,12 @@ class App::Models::Client < Sequel::Model
   many_to_one :agent
   many_to_one :ram_member
 
+  # CRM Referral rows this client has actually made (migrations/0105's
+  # referrer_client_id) — distinct from the same-table self-join `referrals`
+  # above (which is "who signed up with my code"). Mirrors Referral#deals/
+  # #commissions' own reverse-lookup convention.
+  one_to_many :made_referrals, class: 'App::Models::Referral', key: :referrer_client_id
+
   # Same additive-FK-alongside-the-slug sync as models/lead.rb's own
   # sync_agent_reference!/sync_ram_reference! — see that file's comment.
   # Field names differ here (`assigned_agent_slug`/`assigned_ram_id`, both
@@ -107,6 +113,13 @@ class App::Models::Client < Sequel::Model
     end
     if assigned_agent_slug.present? && (new? || column_changed?(:assigned_agent_slug)) && App::Models::Agent.where(slug: assigned_agent_slug).first.nil?
       errors.add(:assigned_agent_slug, 'must match an existing agent')
+    end
+    # Optional, same as Agent#commission_rate/RamMember#default_commission_rate
+    # — only applied when this client is a referral's referrer
+    # (Deal#ensure_client_referral_commission!); still range-checked whenever
+    # a value IS present.
+    if new? || column_changed?(:commission_rate)
+      errors.add(:commission_rate, 'must be between 0 and 100') if commission_rate.present? && !(0..100).cover?(commission_rate.to_f)
     end
   end
 
@@ -297,6 +310,8 @@ class App::Models::Client < Sequel::Model
       'assignedRamMemberId' => ram_member_id,
       'referralCode' => referral_code,
       'referredById' => referred_by_id,
+      'commissionRate' => commission_rate,
+      'bankDetails' => bank_details,
       'investedProperties' => invested_properties,
       'notes' => notes,
       'communicationLog' => communication_log,

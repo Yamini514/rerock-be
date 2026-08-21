@@ -55,8 +55,16 @@ class App::Helpers::CurrentUser
         end
         
         decoded
-      rescue JWT::DecodeError => e
-        App.logger.error("JWT decode error: #{e.message}")
+      rescue JWT::DecodeError, JWT::VerificationError
+        # A RAM/Agent/Client Portal token (each signed with its own separate
+        # SECRET — see current_ram.rb/current_agent.rb/current_client.rb)
+        # fails signature verification here every time, since SaveUserId's
+        # plugin (lib/plugins/save_user_id.rb) unconditionally calls
+        # CurrentUser.id on every model save regardless of which portal the
+        # request actually belongs to. Expected and silent, not an error
+        # worth logging — same "cross-portal token decode is a normal,
+        # frequent no-op" reasoning as CurrentRam/CurrentAgent/CurrentClient's
+        # own decoded_token.
         nil
       rescue => e
         App.logger.error("Token decode error: #{e.message}")
