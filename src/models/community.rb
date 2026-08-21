@@ -1,7 +1,6 @@
 class App::Models::Community < Sequel::Model
   many_to_one :builder
   many_to_one :area
-  many_to_one :location
 
   # Fixed, small enums (same category as Builder's Active/Inactive `status`)
   # — not a dynamic admin-managed resource like Builder/Area/Amenity, so
@@ -21,8 +20,7 @@ class App::Models::Community < Sequel::Model
   # client-side (matching models/area.rb / models/builder.rb's approach) —
   # this validate is the single source of truth, and CommunityForm.js just
   # relays whatever comes back from here onto the matching field.
-  # `location_id` is deliberately excluded from presence (migrations/0053
-  # made it nullable on purpose); `slug` uniqueness mirrors the
+  # `slug` uniqueness mirrors the
   # already-existing DB unique index (migrations/0011). `hero_image` is
   # required so every public community page always has one to render —
   # lib/seo.js's absoluteUrl() (rerock-frontend) crashes if it's ever called
@@ -118,10 +116,10 @@ class App::Models::Community < Sequel::Model
 
   private
 
-  # An Inactive Builder is being retired from active use (see
-  # models/builder.rb's own validate_status_change_guard) — scoped to
+  # An Archived Builder is being retired from active use (see
+  # models/builder.rb's own validate_archive_guard) — scoped to
   # `new? || column_changed?(:builder_id)` so an existing Community whose
-  # Builder later goes Inactive keeps saving normally through every other
+  # Builder later gets archived keeps saving normally through every other
   # tab/action (pricing, amenities, archive/restore, etc.) without this
   # suddenly blocking it, same convention as models/property.rb's
   # validate_property_type_not_archived/validate_community_not_archived.
@@ -130,8 +128,8 @@ class App::Models::Community < Sequel::Model
 
     builder = App::Models::Builder[builder_id]
     errors.add(:builder_id, 'must reference an existing Builder') if builder.nil?
-    if builder && builder.status != 'Active' && (new? || column_changed?(:builder_id))
-      errors.add(:builder_id, 'is Inactive and cannot be assigned to a Community')
+    if builder && builder.archived && (new? || column_changed?(:builder_id))
+      errors.add(:builder_id, 'is Archived and cannot be assigned to a Community')
     end
   end
 

@@ -232,24 +232,23 @@ module App
       end
 
       # =======================================================================
-      # 3. Builders / 5-6. Areas+Locations / 7-8. Amenities+Property Tags —
+      # 3. Builders / 5. Areas / 7-8. Amenities+Property Tags —
       #    none of these have any validation/schema mismatch against the
       #    current models (verified against every column-dropping migration),
       #    so the original SampleData seed_*! methods run correctly; only the
-      #    row COUNT needs trimming. Builders/Areas/Locations are trimmed to a
+      #    row COUNT needs trimming. Builders/Areas are trimmed to a
       #    hand-picked, mutually-consistent set (not a blind "first 5") since
-      #    Communities/Properties below need one specific builder+area+
-      #    location per community, and a plain array-order prefix does not
+      #    Communities/Properties below need one specific builder+area
+      #    per community, and a plain array-order prefix does not
       #    line up (e.g. the 5th/6th Builders in array order are "aparna"/
       #    "my-home", but My Home Avatar — one of the 5 Communities kept — is
       #    the one that needs "my-home", not "aparna").
       # =======================================================================
       KEEP_BUILDER_SLUGS = %w[brigade prestige sobha lodha my-home].freeze
       KEEP_AREA_SLUGS = %w[kokapet tellapur narsingi gachibowli kondapur].freeze
-      KEEP_LOCATION_SLUGS = %w[kokapet-phase-1 tellapur-main-road narsingi-villas gachibowli-central kondapur-main].freeze
 
       # Reimplemented (not a thin SD.seed_builders! wrapper + trim, unlike
-      # Areas/Locations/Amenities/Property Tags/Collections below): SD::BUILDERS'
+      # Areas/Amenities/Property Tags/Collections below): SD::BUILDERS'
       # mock phone numbers are "+91 80 4132 6999" — Builder#validate's
       # `phone.gsub(/\D/, '').length != 10` check counts the country code as
       # part of the digit string (12 digits, not 10) and rejects every single
@@ -286,15 +285,10 @@ module App
         SD.seed_property_types!
       end
 
-      def seed_areas_and_locations!
+      def seed_areas!
         SD.seed_areas!
-        SD.seed_locations!
-        # Locations must be trimmed before Areas — a kept Location still
-        # holding a foreign key into a to-be-dropped Area would otherwise
-        # violate the FK constraint on delete.
-        keep_only!(App::Models::Location, :slug, KEEP_LOCATION_SLUGS)
         keep_only!(App::Models::Area, :slug, KEEP_AREA_SLUGS)
-        puts "Trimmed areas: #{App::Models::Area.count}, locations: #{App::Models::Location.count}"
+        puts "Trimmed areas: #{App::Models::Area.count}"
       end
 
       def seed_amenities!
@@ -334,9 +328,8 @@ module App
 
           builder = App::Models::Builder.first(slug: row[:builder_slug])
           area = App::Models::Area.first(slug: row[:area_slug])
-          location = App::Models::Location.first(slug: row[:location_slug])
-          if builder.nil? || area.nil? || location.nil?
-            warn "[seed_communities!] skipping '#{row[:slug]}': missing builder/area/location"
+          if builder.nil? || area.nil?
+            warn "[seed_communities!] skipping '#{row[:slug]}': missing builder/area"
             next
           end
 
@@ -347,7 +340,6 @@ module App
             c.name = row[:name]
             c.builder_id = builder.id
             c.area_id = area.id
-            c.location_id = location.id
             c.tagline = row[:tagline]
             c.status = COMMUNITY_STATUS_OVERRIDES[row[:slug]] || row[:status]
             c.featured = row[:featured]
@@ -405,9 +397,8 @@ module App
           community = App::Models::Community.first(slug: row[:community_slug])
           builder = App::Models::Builder.first(slug: row[:builder_slug])
           area = App::Models::Area.first(slug: row[:area_slug])
-          location = App::Models::Location.first(slug: row[:location_slug])
           property_type = App::Models::PropertyType.first(name: row[:type_name])
-          if community.nil? || builder.nil? || area.nil? || location.nil? || property_type.nil?
+          if community.nil? || builder.nil? || area.nil? || property_type.nil?
             warn "[seed_properties!] skipping '#{row[:slug]}': missing FK"
             next
           end
@@ -419,7 +410,6 @@ module App
             p.community_id = community.id
             p.builder_id = builder.id
             p.area_id = area.id
-            p.location_id = location.id
             p.property_type_id = property_type.id
             p.status = row[:status]
             p.price = row[:price]
@@ -1244,7 +1234,7 @@ module App
         puts "== Phase 2: Property Catalog =="
         seed_builders!
         seed_property_types!
-        seed_areas_and_locations!
+        seed_areas!
         seed_amenities!
         seed_property_tags!
         seed_communities!

@@ -19,14 +19,14 @@ class App::Models::AgentLeaveRequest < Sequel::Model
   # Fired from services/leave_requests.rb#update only when the caller has
   # already determined `status` just changed to "Approved" — same "compute
   # *_changing before save, act after" convention as
-  # Lead#notify_agent_of_assignment!. Appends a `{date, status}` attendance
-  # row for every day in range that doesn't already have one; never
+  # Lead#notify_agent_of_assignment!. Appends a `{date, status, note}` attendance
+  # row (note carries this request's reason) for every day in range that doesn't already have one; never
   # overwrites a day already marked (same rule as
   # AgentAuth#mark_attendance_present!), so an admin's own prior manual entry
   # for that day always wins.
   def apply_to_attendance!
     existing_dates = (agent.attendance || []).map { |a| a['date'] }
-    new_rows = date_range.reject { |d| existing_dates.include?(d) }.map { |d| { 'date' => d, 'status' => leave_type } }
+    new_rows = date_range.reject { |d| existing_dates.include?(d) }.map { |d| { 'date' => d, 'status' => leave_type, 'note' => reason.presence || leave_type } }
     return if new_rows.empty?
 
     agent.attendance = (agent.attendance || []) + new_rows

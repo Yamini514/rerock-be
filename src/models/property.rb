@@ -2,7 +2,6 @@ class App::Models::Property < Sequel::Model
   many_to_one :community
   many_to_one :builder
   many_to_one :area
-  many_to_one :location
   many_to_one :property_type
   many_to_one :agent
 
@@ -91,9 +90,7 @@ class App::Models::Property < Sequel::Model
   # client-side (matching models/area.rb / models/builder.rb / models/
   # community.rb's approach) — this validate is the single source of
   # truth, and the form just relays whatever comes back from here onto the
-  # matching field. `location_id` stays excluded from presence
-  # (migrations/0053 made it nullable on purpose — the admin form can no
-  # longer set it at all); `slug` uniqueness mirrors the already-existing
+  # matching field. `slug` uniqueness mirrors the already-existing
   # DB unique index (migrations/0012). `builder_id`/`area_id` are still
   # required here even though services/properties.rb now derives them from
   # `community_id` before this validation ever runs — this stays as a

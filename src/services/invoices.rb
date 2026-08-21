@@ -24,7 +24,7 @@ class App::Services::Invoices < App::Services::Base
   # property_name/agent_slug — see services/deals.rb); client_name falls
   # further back to the linked Client's own name when only client_id is
   # given. Same "derive the denormalized string from the real FK's own
-  # record" pattern as Deals#create/Locations#create.
+  # record" pattern as Deals#create.
   def create
     data = data_for(:save)
     if data[:deal_id].present?

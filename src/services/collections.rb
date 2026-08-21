@@ -21,7 +21,7 @@ class App::Services::Collections < App::Services::Base
   end
 
   # addCollection defaults displayOrder to "end of the list" when the caller
-  # doesn't pick one — same as PropertyTypes/Areas/Locations#create.
+  # doesn't pick one — same as PropertyTypes/Areas#create.
   def create
     data = data_for(:save)
     data[:display_order] = data[:display_order].presence || (model.max(:display_order).to_i + 1)

@@ -17,12 +17,13 @@ class App::Services::Areas < App::Services::Base
     # Grouped over the whole Properties/Communities tables in one query
     # regardless of which page of Areas is being returned — unaffected by
     # pagination, same as PropertyTypes#property_stats_by_type.
-    property_counts, community_counts, builder_counts = stats_by_area
+    property_counts, community_counts, builder_counts, live_property_counts = stats_by_area
     paginated_response(ds) { |a|
       a.to_pos.merge(
         'property_count' => property_counts[a.id] || 0,
         'community_count' => community_counts[a.id] || 0,
-        'builder_count' => builder_counts[a.id] || 0
+        'builder_count' => builder_counts[a.id] || 0,
+        'live_property_count' => live_property_counts[a.id] || 0
       )
     }
   end
@@ -44,7 +45,7 @@ class App::Services::Areas < App::Services::Base
     {
       save: [
         :slug, :name, :city, :state, :country, :image, :avg_price_per_sqft, :growth_pct,
-        :lat, :lng, :description, :display_order, :active, :seo, :archived
+        :lat, :lng, :description, :display_order, :seo, :archived
       ]
     }
   end
@@ -72,6 +73,14 @@ class App::Services::Areas < App::Services::Base
     builder_counts = active_properties.select(:area_id, :builder_id).distinct.from_self
       .group_and_count(:area_id).as_hash(:area_id, :count)
 
-    [property_counts, community_counts, builder_counts]
+    # `live_property_count` is the sold-aware sibling used for the public
+    # "N Properties" display (LocationCard.js) — same Published-and-not-Sold
+    # definition as Communities#has_live_properties?/#live_community_ids.
+    # `property_count` above deliberately keeps including Sold listings since
+    # AreaForm.js's delete-guard relies on it staying the full total.
+    live_properties = Property.where(publish_status: 'Published').exclude(status: 'Sold')
+    live_property_counts = live_properties.group_and_count(:area_id).as_hash(:area_id, :count)
+
+    [property_counts, community_counts, builder_counts, live_property_counts]
   end
 end

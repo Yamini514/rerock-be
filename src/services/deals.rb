@@ -30,8 +30,7 @@ class App::Services::Deals < App::Services::Base
   # client_name/property_name default from the linked Client/Property's own
   # name when a client_id/property_id is given but the fallback string isn't
   # explicitly passed — same "derive the denormalized string from the real
-  # FK's own record" pattern as Locations#create defaulting `city` from the
-  # parent Area. referral_id similarly auto-resolves when a deal is created
+  # FK's own record" pattern used throughout this codebase. referral_id similarly auto-resolves when a deal is created
   # directly (not via SiteVisit#ensure_deal_for_completion!, which already
   # resolves it from the visit's own lead_id) against an existing Referral
   # for the same client — an admin can still pass an explicit referral_id

@@ -119,6 +119,13 @@ class App::Models::Deal < Sequel::Model
   # this stamped value instead of recomputing from the agent's current
   # rate). Wired into both Deals#create and #update, same as
   # `ensure_commission_for_closure!` above.
+  #
+  # Rate priority mirrors ensure_commission_for_closure! above: the specific
+  # Property's own `commission_rate` (migrations/0099) first — the more
+  # specific override when an admin has set one on the property that
+  # actually sold — then the agent's own flat `commission_rate`. Previously
+  # this always used the agent's flat rate, silently ignoring any
+  # property-level override the RAM commission path already respects.
   def ensure_agent_commission_for_closure!
     return unless stage == 'Closed'
     return if agent_slug.blank?
@@ -127,7 +134,7 @@ class App::Models::Deal < Sequel::Model
     agent = App::Models::Agent.where(slug: agent_slug).first
     return if agent.nil?
 
-    rate = agent.commission_rate.to_f
+    rate = property&.commission_rate.presence || agent.commission_rate.to_f
     self.agent_commission_rate = rate
     self.agent_commission_amount = (value.to_i * rate / 100.0).round
     save_changes(validate: false)

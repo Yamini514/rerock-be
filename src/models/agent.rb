@@ -106,6 +106,7 @@ class App::Models::Agent < Sequel::Model
     entries = attendance || []
     errors.add(:attendance, "each item needs a date") if entries.any? { |a| a['date'].blank? }
     errors.add(:attendance, "each item needs a status") if entries.any? { |a| a['status'].blank? }
+    errors.add(:attendance, "leave and half day entries need a note") if entries.any? { |a| ['Leave', 'Half Day'].include?(a['status']) && a['note'].blank? }
   end
 
   def validate_properties_assigned
@@ -231,21 +232,18 @@ class App::Models::Agent < Sequel::Model
       from    'apps@srinishtha.com'
       to      agent_email
       subject 'Your REROCK Realty agent account is approved'
-      html_part do
-        content_type 'text/html; charset=UTF-8'
-        body <<-HTML
-          <html>
-          <body>
-            <h1>You're approved!</h1>
-            <p>Hello #{agent_name},</p>
-            <p>Your REROCK Realty agent registration has been approved. You can now log in to your account.</p>
-            <p><a href="#{login_url}">Log in</a></p>
-            <p>Thank you,<br/>REROCK Realty</p>
-          </body>
-          </html>
-        HTML
-      end
     end
+
+    App::MailerTemplate.brand!(
+      mail,
+      preheader: "Your REROCK Realty agent registration has been approved.",
+      body_html: <<~HTML,
+        <h2 style="margin:0 0 12px; font-size:20px; color:#1c1b1a;">You're approved!</h2>
+        <p style="margin:0 0 8px;">Hello #{agent_name},</p>
+        <p style="margin:0;">Your REROCK Realty agent registration has been approved. You can now log in to your account.</p>
+      HTML
+      cta: { label: 'Log in', url: login_url }
+    )
 
     mail.deliver!
   end
@@ -294,9 +292,15 @@ class App::Models::Agent < Sequel::Model
       deals_count = closed_deals.size
       total_revenue = closed_deals.sum { |d| d.value || 0 }
       rate = commission_rate.to_f
+      # Same rate priority as Deal#ensure_agent_commission_for_closure!: a
+      # property's own `commission_rate` override, when the closed deal
+      # predates that stamping (so has no agent_commission_amount yet) or
+      # for an open deal's forward-looking estimate; falls back to this
+      # agent's own flat rate otherwise.
+      deal_rate = ->(d) { d.property&.commission_rate.presence || rate }
 
-      deal_commission = ->(d) { d.agent_commission_amount || ((d.value.to_i * rate) / 100.0).round }
-      pending_commission = open_deals.sum { |d| (d.value.to_i * rate / 100.0).round }
+      deal_commission = ->(d) { d.agent_commission_amount || ((d.value.to_i * deal_rate.call(d)) / 100.0).round }
+      pending_commission = open_deals.sum { |d| (d.value.to_i * deal_rate.call(d) / 100.0).round }
 
       monthly = closed_deals
         .group_by { |d| (d.closing_date || d.created_at).strftime('%b %Y') }
@@ -363,22 +367,19 @@ class App::Models::Agent < Sequel::Model
       from    'apps@srinishtha.com'
       to      agent_email
       subject 'Set/reset your REROCK Realty agent password'
-      html_part do
-        content_type 'text/html; charset=UTF-8'
-        body <<-HTML
-          <html>
-          <body>
-            <h1>Set your password</h1>
-            <p>Hello #{agent_name},</p>
-            <p>Click the link below to set or reset your REROCK Realty agent portal password:</p>
-            <p><a href="#{reset_url}">Set your password</a></p>
-            <p>If you did not request this, please ignore this email.</p>
-            <p>Thank you,<br/>REROCK Realty</p>
-          </body>
-          </html>
-        HTML
-      end
     end
+
+    App::MailerTemplate.brand!(
+      mail,
+      preheader: "Set or reset your REROCK Realty agent portal password.",
+      body_html: <<~HTML,
+        <h2 style="margin:0 0 12px; font-size:20px; color:#1c1b1a;">Set your password</h2>
+        <p style="margin:0 0 8px;">Hello #{agent_name},</p>
+        <p style="margin:0;">Use the button below to set or reset your REROCK Realty agent portal password.</p>
+      HTML
+      cta: { label: 'Set your password', url: reset_url },
+      footnote: 'If you did not request this, you can safely ignore this email.'
+    )
 
     mail.deliver!
   end
@@ -397,22 +398,19 @@ class App::Models::Agent < Sequel::Model
       from    'apps@srinishtha.com'
       to      agent_email
       subject 'Your REROCK Realty agent portal login'
-      html_part do
-        content_type 'text/html; charset=UTF-8'
-        body <<-HTML
-          <html>
-          <body>
-            <h1>Welcome to REROCK Realty</h1>
-            <p>Hello #{agent_name},</p>
-            <p>An account has been created for you on the REROCK Realty Agent Portal. Here is your temporary password:</p>
-            <p style="font-size: 22px; font-weight: bold; letter-spacing: 2px;">#{temp_password}</p>
-            <p>Please log in and change your password from your profile settings as soon as possible.</p>
-            <p>Thank you,<br/>REROCK Realty</p>
-          </body>
-          </html>
-        HTML
-      end
     end
+
+    App::MailerTemplate.brand!(
+      mail,
+      preheader: "Your REROCK Realty agent portal account is ready.",
+      body_html: <<~HTML,
+        <h2 style="margin:0 0 12px; font-size:20px; color:#1c1b1a;">Welcome to REROCK Realty</h2>
+        <p style="margin:0 0 8px;">Hello #{agent_name},</p>
+        <p style="margin:0;">An account has been created for you on the REROCK Realty Agent Portal. Here is your temporary password:</p>
+        #{App::MailerTemplate.code_block(temp_password)}
+        <p style="margin:0; font-size:13px; color:#6b6b6b;">Please log in and change your password from your profile settings as soon as possible.</p>
+      HTML
+    )
 
     mail.deliver!
   end

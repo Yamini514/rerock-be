@@ -97,22 +97,19 @@ class App::Models::RamMember < Sequel::Model
       from    'apps@srinishtha.com'
       to      ram_email
       subject 'Reset your RAM Portal password'
-      html_part do
-        content_type 'text/html; charset=UTF-8'
-        body <<-HTML
-          <html>
-          <body>
-            <h1>Reset your password</h1>
-            <p>Hello #{ram_name},</p>
-            <p>We received a request to reset your REROCK Advisory Member Portal password. Click the link below to reset it:</p>
-            <p><a href="#{reset_url}">Reset your password</a></p>
-            <p>If you did not request a password reset, please ignore this email.</p>
-            <p>Thank you,<br/>REROCK Realty</p>
-          </body>
-          </html>
-        HTML
-      end
     end
+
+    App::MailerTemplate.brand!(
+      mail,
+      preheader: "We received a request to reset your REROCK Advisory Member Portal password.",
+      body_html: <<~HTML,
+        <h2 style="margin:0 0 12px; font-size:20px; color:#1c1b1a;">Reset your password</h2>
+        <p style="margin:0 0 8px;">Hello #{ram_name},</p>
+        <p style="margin:0;">We received a request to reset your REROCK Advisory Member Portal password. Use the button below to choose a new one.</p>
+      HTML
+      cta: { label: 'Reset your password', url: reset_url },
+      footnote: 'If you did not request a password reset, you can safely ignore this email — your password will not be changed.'
+    )
 
     mail.deliver!
   end
@@ -131,22 +128,19 @@ class App::Models::RamMember < Sequel::Model
       from    'apps@srinishtha.com'
       to      ram_email
       subject 'Your REROCK Realty RAM Portal login'
-      html_part do
-        content_type 'text/html; charset=UTF-8'
-        body <<-HTML
-          <html>
-          <body>
-            <h1>Welcome to REROCK Realty</h1>
-            <p>Hello #{ram_name},</p>
-            <p>An account has been created for you on the REROCK Realty RAM Portal. Here is your temporary password:</p>
-            <p style="font-size: 22px; font-weight: bold; letter-spacing: 2px;">#{temp_password}</p>
-            <p>Please log in and change your password from your profile settings as soon as possible.</p>
-            <p>Thank you,<br/>REROCK Realty</p>
-          </body>
-          </html>
-        HTML
-      end
     end
+
+    App::MailerTemplate.brand!(
+      mail,
+      preheader: "Your REROCK Realty RAM Portal account is ready.",
+      body_html: <<~HTML,
+        <h2 style="margin:0 0 12px; font-size:20px; color:#1c1b1a;">Welcome to REROCK Realty</h2>
+        <p style="margin:0 0 8px;">Hello #{ram_name},</p>
+        <p style="margin:0;">An account has been created for you on the REROCK Realty RAM Portal. Here is your temporary password:</p>
+        #{App::MailerTemplate.code_block(temp_password)}
+        <p style="margin:0; font-size:13px; color:#6b6b6b;">Please log in and change your password from your profile settings as soon as possible.</p>
+      HTML
+    )
 
     mail.deliver!
   end
