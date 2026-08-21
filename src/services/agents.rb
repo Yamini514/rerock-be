@@ -71,6 +71,21 @@ class App::Services::Agents < App::Services::Base
     end
   end
 
+  # Dry-run validation (POST /agents/validate, routes.rb) — runs
+  # Agent#validate against whatever's been typed so far without ever saving,
+  # so the Admin Portal's Add Agent modal can surface a real, backend-
+  # sourced error the moment a field is blurred instead of only after the
+  # full #create round-trip. Same error shape as a failed #create
+  # (`return_errors!(obj.errors, 400)`, mirroring Base#save's own failure
+  # branch) so the frontend's existing handleApiError needs no special-
+  # casing for this vs. a real create failure.
+  def validate_only
+    obj = model.new(data_for(:save))
+    return return_errors!(obj.errors, 400) unless obj.valid?
+
+    return_success({})
+  end
+
   # Status changes (Active/On Leave/Inactive), profile edits, and the
   # remaining jsonb arrays (tasks, attendance, properties_sold,
   # properties_assigned, documents, activity_log) all ride the standard
@@ -81,28 +96,48 @@ class App::Services::Agents < App::Services::Base
   # successful save (see that method for why it's safe to call
   # unconditionally on every update) and to return with_live_stats instead
   # of a plain to_pos, same reason as #list/#get above.
+  #
+  # The generic "Your profile was updated" notification below fires on any
+  # admin edit here, same "notify the person whose data it is" convention
+  # as RamMembers#update/Client#update — including the exact same PUT that
+  # also fires notify_of_approval! on a Pending -> Active transition, so an
+  # approval produces both notifications. That's accepted behavior already
+  # (RAM's own equivalent has no de-dup either): the two say genuinely
+  # different things (one specific to approval, one to "something on your
+  # record changed"), and this codebase has no precedent for suppressing
+  # one in favor of the other.
   def update(data = nil)
     data ||= data_for(:save)
     item.set_fields(data, data.keys)
     save(item) do |o|
       o.notify_of_approval!
+      Notification.create(
+        audience: 'agent',
+        recipient_id: o.id,
+        type: 'profile',
+        icon: 'UserCog',
+        title: 'Your profile was updated',
+        message: 'Your account details were updated by our team.'
+      )
+      o.log_activity!(title: 'Profile updated', description: 'Account details were updated by an admin.')
       return_success(o.with_live_stats)
     end
   end
 
   # bookings/revenue/conversion_rate/leads_assigned/deals_closed/
-  # commission_monthly/commission_earned/rating/pending_commission are
-  # deliberately NOT in this whitelist — they're computed live on every read
-  # now (Agent#live_stats), so an admin PUT can no longer write a value that
-  # would just be overwritten by the next read anyway. commission_rate stays
-  # admin-set (it's the input to the live commission calc, not an output of
-  # it). role/joined_date aren't here either — Agent#before_validation
-  # stamps both automatically the moment a record is created and neither is
-  # ever editable after. whatsapp/address/strong_area_ids were dropped from
-  # the Add/Edit Agent form (simplified to name/email/phone/territory/
-  # specialization/experience/commission rate only) and have no other write
-  # path, so they're dropped from here too — existing values on legacy
-  # agents still read fine via to_pos, just can't be set/changed anymore.
+  # commission_monthly/commission_earned/rating/pending_commission/
+  # properties_sold are deliberately NOT in this whitelist — they're
+  # computed live on every read now (Agent#live_stats), so an admin PUT can
+  # no longer write a value that would just be overwritten by the next read
+  # anyway. commission_rate stays admin-set (it's the input to the live
+  # commission calc, not an output of it). role/joined_date aren't here
+  # either — Agent#before_validation stamps both automatically the moment a
+  # record is created and neither is ever editable after. whatsapp/address/
+  # strong_area_ids were dropped from the Add/Edit Agent form (simplified to
+  # name/email/phone/territory/specialization/experience/commission rate
+  # only) and have no other write path, so they're dropped from here too —
+  # existing values on legacy agents still read fine via to_pos, just can't
+  # be set/changed anymore.
   def self.fields
     {
       save: [
@@ -110,7 +145,7 @@ class App::Services::Agents < App::Services::Base
         :specialization, :experience_years, :profession, :date_of_birth,
         :status, :territory, :commission_rate,
         :tasks, :attendance,
-        :properties_sold, :properties_assigned, :documents, :activity_log
+        :properties_assigned, :documents, :activity_log
       ]
     }
   end

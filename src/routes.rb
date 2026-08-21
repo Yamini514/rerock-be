@@ -706,6 +706,8 @@ class App::Routes < Roda
             r.delete { require_permission!('crm', 'delete'); Leads[r, id: id].delete }
           end
 
+          r.get('statuses') { Leads[r].statuses }
+
           do_crud(Leads, r, 'CL')
         end
 
@@ -748,6 +750,13 @@ class App::Routes < Roda
         end
 
         r.on 'agents' do
+          # Dry-run validation (services/agents.rb#validate_only) — runs
+          # Agent#validate against whatever's been typed so far without ever
+          # saving, so the Admin Portal's Add Agent modal can show a real,
+          # backend-sourced error the moment a field is blurred instead of
+          # only after the full create round-trip.
+          r.post('validate') { Agents[r].validate_only }
+
           do_crud(Agents, r, 'CRUDL')
         end
 
@@ -791,6 +800,13 @@ class App::Routes < Roda
             r.put { RamMembers[r, id: ram_id].update }
             r.delete { RamMembers[r, id: ram_id].delete }
           end
+
+          # Dry-run validation (services/ram_members.rb#validate_only) —
+          # runs RamMember#validate against whatever's been typed so far
+          # without ever saving, so the Admin Portal's Add RAM modal can
+          # show a real, backend-sourced error the moment a field is
+          # blurred instead of only after the full create round-trip.
+          r.post('validate') { RamMembers[r].validate_only }
 
           do_crud(RamMembers, r, 'CL')
         end

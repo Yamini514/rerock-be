@@ -65,6 +65,21 @@ class App::Services::RamMembers < App::Services::Base
     end
   end
 
+  # Dry-run validation (POST /ram/validate, routes.rb) — runs
+  # RamMember#validate against whatever's been typed so far without ever
+  # saving, so the Admin Portal's Add RAM modal can surface a real,
+  # backend-sourced error the moment a field is blurred instead of only
+  # after the full #create round-trip. Same error shape as a failed
+  # #create (`return_errors!(obj.errors, 400)`, mirroring Base#save's own
+  # failure branch) so the frontend's existing handleApiError needs no
+  # special-casing for this vs. a real create failure.
+  def validate_only
+    obj = model.new(data_for(:save))
+    return return_errors!(obj.errors, 400) unless obj.valid?
+
+    return_success({})
+  end
+
   # Status changes (Active/Pending/Inactive, including the "Approve" row
   # action), profile edits, and every jsonb array (recommendations, reports,
   # activities, documents) all ride the standard PUT/update below,

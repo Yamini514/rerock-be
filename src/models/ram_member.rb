@@ -1,5 +1,12 @@
+require 'uri'
+
 class App::Models::RamMember < Sequel::Model
   include BCrypt
+
+  # Same 10-digit Indian mobile shape Agent::PHONE_REGEXP already enforces
+  # (backend/src/models/agent.rb) — RAM's own phone had no format check at
+  # all before, only presence.
+  PHONE_REGEXP = /\A[6-9]\d{9}\z/
 
   # Full Name/Email/Contact Number are the RAM record's mandatory core
   # fields. Contact number isn't a real column (phone lives in
@@ -22,9 +29,11 @@ class App::Models::RamMember < Sequel::Model
     super
     validates_presence [:name, :email]
     validates_unique(:email)
+    errors.add(:email, "must be a valid email address") if email.present? && !email.match?(URI::MailTo::EMAIL_REGEXP)
 
     if new? || column_changed?(:profile_extra)
       errors.add(:phone, "Can't be blank") if extract_phone.blank?
+      errors.add(:phone, "must be a valid 10-digit phone number") if extract_phone.present? && !extract_phone.match?(PHONE_REGEXP)
     end
     if new? || column_changed?(:profession)
       errors.add(:profession, "Can't be blank") if profession.blank?

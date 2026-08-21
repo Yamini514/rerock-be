@@ -173,7 +173,7 @@ class App::Services::AgentPortal < App::Services::Base
 
     allowed = params.slice(:status, :notes, :date, :time)
     visit.set_fields(allowed, allowed.keys)
-    save(visit) { |o| o.ensure_deal_for_completion!; o.notify_client_of_status!; return_success(o.to_pos) }
+    save(visit) { |o| o.ensure_deal_for_completion!; o.notify_client_of_status!; o.notify_agent_of_status!; return_success(o.to_pos) }
   end
 
   # Follow Ups (backend/src/services/follow_ups.rb) is a real `agent_id`
