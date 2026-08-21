@@ -67,6 +67,13 @@ class App::Services::Uploads < App::Services::Base
     'lead-documents' => 'leads/documents',
     'user-avatar' => 'users/avatars',
     'ram-avatar' => 'ram-members/avatars',
+    # Client Portal's own profile photo (components/portal/profile/
+    # PersonalInformationCard.js) — same "own avatar purpose per portal"
+    # convention as user-avatar/ram-avatar above. Scoped to
+    # allowed_purposes: %w[client-documents client-avatar] on the
+    # client-portal/me/uploads route (routes.rb); a client token still can't
+    # presign anything else.
+    'client-avatar' => 'clients/avatars',
   }.freeze
 
   MAX_FILENAME_LENGTH = 200
