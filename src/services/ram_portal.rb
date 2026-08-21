@@ -45,7 +45,7 @@ class App::Services::RamPortal < App::Services::Base
       property_id: params[:property_id].presence,
       source: params[:source].presence || "RAM",
       ram_id: ram.slug,
-      status: "New"
+      status: "Enquiry"
     )
 
     save(lead) do |o|

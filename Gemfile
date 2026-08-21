@@ -7,13 +7,13 @@ gem 'puma'
 gem 'csv'
 gem 'dotenv'
 gem 'rake'
-gem 'oj', platforms: :ruby
+gem 'oj'
 gem 'rack'
 gem 'activesupport', require: 'active_support/all'
 gem 'jwt'
 gem 'sequel'
-gem 'pg', platforms: 'ruby'
-gem 'sequel_pg', platform: 'ruby', require: false
+gem 'pg'
+gem 'sequel_pg', platforms: [:ruby, :mri], require: false
 gem "bcrypt"
 gem 'json_schemer'
 gem 'aws-sdk-s3'
