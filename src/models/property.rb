@@ -68,7 +68,7 @@ class App::Models::Property < Sequel::Model
   # "Save & Next" already persisted the row, and Furnishing is genuinely
   # not applicable to a Land/Plot property type at all (see
   # PropertyForm.js's own isLandType heuristic).
-  STATUSES = ['Available', 'Reserved', 'Sold', 'Under Construction', 'Ready To Move'].freeze
+  STATUSES = ['Available', 'Reserved', 'Sold', 'Under Construction', 'Ready To Move', 'Unavailable'].freeze
   FURNISHING_OPTIONS = ['Unfurnished', 'Semi-Furnished', 'Fully Furnished'].freeze
   PUBLISH_STATUSES = ['Draft', 'Published', 'Archived', 'Scheduled'].freeze
 
@@ -114,6 +114,7 @@ class App::Models::Property < Sequel::Model
     errors.add(:furnishing, "must be one of #{FURNISHING_OPTIONS.join(', ')}") if furnishing.present? && !FURNISHING_OPTIONS.include?(furnishing)
     errors.add(:publish_status, "must be one of #{PUBLISH_STATUSES.join(', ')}") if publish_status.present? && !PUBLISH_STATUSES.include?(publish_status)
     errors.add(:publish_at, 'is required when Publish Status is Scheduled') if publish_status == 'Scheduled' && publish_at.blank?
+    errors.add(:publish_at, "can't be in the past") if publish_status == 'Scheduled' && publish_at.present? && publish_at < Time.now
 
     if title && (new? || column_changed?(:title))
       dup = self.class.where(Sequel.function(:lower, :title) => title.strip.downcase)
