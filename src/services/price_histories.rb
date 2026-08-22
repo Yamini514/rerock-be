@@ -15,6 +15,7 @@ class App::Services::PriceHistories < App::Services::Base
   def list
     ds = model.order(Sequel.desc(:year), Sequel.desc(:effective_date))
     ds = ds.where(community_id: qs[:community_id]) if qs[:community_id].present?
+    ds = ds.where(year: qs[:year]) if qs[:year].present?
 
     if qs.key?(:page)
       total = ds.count
@@ -31,16 +32,33 @@ class App::Services::PriceHistories < App::Services::Base
     data = data_for(:save)
     data[:change_type] = 'manual-entry'
     data[:effective_date] ||= Time.now
-    save(model.new(data))
+    data[:changed_by] = audit_changed_by
+    save(model.new(data)) do |o|
+      o.community&.sync_pricing_trend!
+      return_success(o.to_pos)
+    end
   end
 
   def update(data = nil)
     return_errors!("Cannot edit an automatically recorded price change.", 403) unless item.change_type == 'manual-entry'
-    super
+    data ||= data_for(:save)
+    data[:changed_by] = audit_changed_by
+    item.set_fields(data, data.keys)
+    save(item) do |o|
+      o.community&.sync_pricing_trend!
+      return_success(o.to_pos)
+    end
   end
 
+  # `super` (Base#delete) halts via return_errors! on failure (a 404 item
+  # lookup miss, or a Sequel::ForeignKeyConstraintViolation) — that halt
+  # unwinds the whole call stack via Roda's `throw :halt`, so the sync line
+  # below only ever runs once the delete has actually succeeded.
   def delete
     return_errors!("Cannot delete an automatically recorded price change.", 403) unless item.change_type == 'manual-entry'
-    super
+    community = item.community
+    result = super
+    community&.sync_pricing_trend!
+    result
   end
 end

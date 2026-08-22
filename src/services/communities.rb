@@ -81,7 +81,10 @@ class App::Services::Communities < App::Services::Base
     data[:last_price_update] = Date.today if price_changing
     item.set_fields(data, data.keys)
     save(item) do |o|
-      record_price_history!(o, change_type: 'manual') if price_changing
+      if price_changing
+        record_price_history!(o, change_type: 'manual')
+        o.sync_pricing_trend!
+      end
       return_success(o.to_pos)
     end
   end
@@ -112,6 +115,7 @@ class App::Services::Communities < App::Services::Base
         community.last_price_update = Date.today
         community.save
         record_price_history!(community, change_type: 'bulk', notes: params[:notes])
+        community.sync_pricing_trend!
         community
       end
     end

@@ -2,6 +2,29 @@ class App::Models::Community < Sequel::Model
   many_to_one :builder
   many_to_one :area
 
+  # Rebuilds `pricing_trend` (jsonb, migrations/0011) from this Community's
+  # real price_histories rows (migrations/0056) — the single sync point that
+  # keeps the public/agent/RAM pricing-trend charts (still reading this
+  # column directly, e.g. app/(site)/pricing-trends/PricingTrendsClient.js)
+  # fed by real admin price changes instead of the frozen seed data
+  # seeds/sample_data.rb's `trend` helper originally wrote. Called from
+  # services/communities.rb (#update/#bulk_price_update) and
+  # services/price_histories.rb (manual-entry create/update/delete) — every
+  # path that touches this community's price_histories. `price_min` stands
+  # in for `pricePerSqft` (the key every existing chart already reads via
+  # PricingTrendChart's default dataKey) since Community has no real
+  # per-sq.ft column of its own, the same substitution
+  # CommunityDetailClient.js's own Pricing Trend tab already makes.
+  def sync_pricing_trend!
+    latest_by_year = App::Models::PriceHistory.where(community_id: id).order(:effective_date).each_with_object({}) do |row, h|
+      h[row.year] = row
+    end
+    trend = latest_by_year.values.sort_by(&:year).map { |row| { year: row.year.to_s, pricePerSqft: row.price_min } }
+    update(pricing_trend: trend)
+  rescue => e
+    App.logger.error("[Community] pricing_trend sync failed for ##{id}: #{e.message}")
+  end
+
   # Fixed, small enums (same category as Builder's Active/Inactive `status`)
   # — not a dynamic admin-managed resource like Builder/Area/Amenity, so
   # CommunityForm.js is allowed to hold its own copy of these for the
